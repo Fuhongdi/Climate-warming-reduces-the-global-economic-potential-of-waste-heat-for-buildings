@@ -768,7 +768,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
 
     z_meta = df_z[["zone_id", "P0_gj", "lat", "baseline_mean_mw"]].copy()
     z_meta["lat_lbl"] = pd.cut(z_meta["lat"].abs(), bins=[0, 30, 40, 50, 60, 90], labels=["<30°", "30–40°", "40–50°", "50–60°", ">60°"], include_lowest=True)
-    z_meta["sz_lbl"] = pd.cut(z_meta["baseline_mean_mw"], bins=[0, 10, 100, 1e9], labels=["1–10 MW small cities", "10–100 MW cities", ">100 MW cities"], include_lowest=True)
+    z_meta["sz_lbl"] = pd.cut(z_meta["baseline_mean_mw"], bins=[0, 10, 100, 1e9], labels=["1–10 MW areas", "10–100 MW areas", ">100 MW areas"], include_lowest=True)
     gcm_lat_pts: dict[str, list[tuple[str, float]]] = {}
     gcm_sz_pts: dict[str, list[tuple[str, float]]] = {}
     for mcode, _, _ in GCM_ORDER:
@@ -801,7 +801,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     sz_rows = []
     for _, r in df_sz.iterrows():
         raw_s = str(r["size_tier"])
-        lbl = raw_s.replace("Small (1-10 MW)", "1–10 MW small cities").replace("Medium (10-100 MW)", "10–100 MW cities").replace("Large (>100 MW)", ">100 MW cities")
+        lbl = raw_s.replace("Small (1-10 MW)", "1–10 MW areas").replace("Medium (10-100 MW)", "10–100 MW areas").replace("Large (>100 MW)", ">100 MW areas")
         pts = gcm_sz_pts.get(lbl, [])
         vals_p = [v for _, v in pts]
         sz_rows.append({
@@ -811,7 +811,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
             "hi": float(max(vals_p)) if vals_p else float(r["dP_rel_pct"]),
             "pts": pts,
         })
-    sz_order = [">100 MW cities", "10–100 MW cities", "1–10 MW small cities"]
+    sz_order = [">100 MW areas", "10–100 MW areas", "1–10 MW areas"]
     sz_rows = sorted(sz_rows, key=lambda d: sz_order.index(d["lbl"]) if d["lbl"] in sz_order else 99)
 
     rows_c = (lat_rows + sz_rows)[::-1]
@@ -912,7 +912,7 @@ def build_figure_4() -> dict:
     ax_a.axhline(3.0, ls="--", lw=0.65, color="#000000", zorder=4)
     ax_a.text(-39.2, 3.25, "Threshold", fontsize=FS_COMPACT, va="bottom", ha="left",
               bbox=dict(boxstyle="square,pad=0.18", facecolor=COL_ICE_ZONE, edgecolor="none", alpha=0.96), zorder=5)
-    ax_a.text(-39.2, 0.30, "Initial saving <3.0 USD GJ$^{-1}$ holds\n92.2% of stranded capital (34.8B USD)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.14,
+    ax_a.text(-39.2, 0.30, "Initial saving <3.0 USD GJ$^{-1}$ holds\n92.2% of exposed capital (34.8B USD)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.14,
               bbox=dict(boxstyle="square,pad=0.06", facecolor=COL_BLUSH_ZONE, edgecolor="none", alpha=0.88), zorder=5)
 
     for mask, col, zo in [(~df_lk["stranded"], COL_SAPPHIRE, 2.8), (df_lk["stranded"], COL_CORAL, 3.2)]:
@@ -938,7 +938,7 @@ def build_figure_4() -> dict:
     ax_a.set_xticklabels([f"{MINUS}40", f"{MINUS}30", f"{MINUS}20", f"{MINUS}10", "0"])
     ax_a.set_yticks([0, 3, 6, 9, 12, 15])
     ax_a.set_xlabel("2046–2065 heating demand change (%)")
-    ax_a.set_ylabel("Initial cost saving over building heating (USD GJ$^{-1}$)")
+    ax_a.set_ylabel("Initial cost saving over building alternatives (USD GJ$^{-1}$)")
 
     xg = np.linspace(-40, 0, 200)
     yg = np.linspace(0, 15.2, 200)
@@ -1023,13 +1023,13 @@ def build_figure_4() -> dict:
 
     ax_b1.set_xlim(0, 27.5)
     ax_b1.set_xticks([0, 10, 20])
-    ax_b1.text(0.5, 1.03, "Stranded capital\n(billion USD)", transform=ax_b1.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
+    ax_b1.text(0.5, 1.03, "Exposed capital\n(billion USD)", transform=ax_b1.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
 
     ax_b2.set_xlim(0, 108)
     ax_b2.set_xticks([0, 40, 80])
-    ax_b2.text(0.5, 1.03, "Share of national\ncapital (%)", transform=ax_b2.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
+    ax_b2.text(0.5, 1.03, "Exposed investment\nshare (%)", transform=ax_b2.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
 
-    fig.text(0.980, 0.77, "Continental\npipe systems", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
+    fig.text(0.980, 0.77, "Large network\nportfolios", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
     fig.text(0.980, 0.55, "Warm & electrified\nmarkets", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
 
     clean_ax(ax_c1, "y")

@@ -9,7 +9,7 @@ import matplotlib as mpl
 from matplotlib.patches import Polygon as MplPolygon, Rectangle as MplRectangle
 import matplotlib.pyplot as plt
 
-ROOT = Path(os.environ.get("WASTE_HEAT_ROOT", Path(__file__).resolve().parents[2]))
+ROOT = Path(os.environ["WASTE_HEAT_ROOT"]) if "WASTE_HEAT_ROOT" in os.environ else Path(__file__).resolve().parents[2]
 MAIN_FIG_DIR = ROOT / "figures/main"
 
 CANVAS_W = 1376
@@ -43,7 +43,7 @@ def build_nodes_spec(cfg: dict) -> list[dict]:
         {"id": "node_iv",  "role": "parameter",   "x": 258,  "y": 658, "w": 205, "h": 85, "lines": ["(iv) Heating thresholds", "& national surveys"]},
         {"id": "out_recoverable", "role": "output", "x": rx, "y": 130, "w": rw,  "h": 43, "lines": ["Recoverable waste heat"]},
         {"id": "node_4",   "role": "calculation", "x": 477,  "y": 289, "w": 206, "h": 86, "lines": ["(4) Dispatch daily heat", "within 100 km"]},
-        {"id": "node_5",   "role": "calculation", "x": 477,  "y": 467, "w": 206, "h": 86, "lines": ["(5) Screen network vs", "building heating costs"]},
+        {"id": "node_5",   "role": "calculation", "x": 477,  "y": 467, "w": 206, "h": 86, "lines": ["(5) Screen network vs", "building-level heating"]},
         {"id": "node_v",   "role": "parameter",   "x": 477,  "y": 658, "w": 206, "h": 85, "lines": ["(v) Equipment costs,", "tariffs & daily COP"]},
         {"id": "out_technical", "role": "output", "x": 698,  "y": 305, "w": 202, "h": 53, "lines": ["Technical potential"]},
         {"id": "out_economic",  "role": "output", "x": 698,  "y": 483, "w": 202, "h": 53, "lines": ["Economic potential"]},
@@ -54,7 +54,7 @@ def build_nodes_spec(cfg: dict) -> list[dict]:
         {"id": "node_9",   "role": "calculation", "x": 922,  "y": 658, "w": 207, "h": 85, "lines": ["(9) Apply 2050 system", "transitions & 9 tests"]},
         {"id": "out_r1",   "role": "output",      "x": 1146, "y": 108, "w": 201, "h": 86, "lines": ["Historical & projected", "global potential"]},
         {"id": "out_r2",   "role": "output",      "x": 1146, "y": 289, "w": 201, "h": 86, "lines": ["Demand, matching &", "viability drivers"]},
-        {"id": "out_r3",   "role": "output",      "x": 1146, "y": 467, "w": 201, "h": 86, "lines": ["Stranded pipe capital", "& lost CO\u2082 abatement"]},
+        {"id": "out_r3",   "role": "output",      "x": 1146, "y": 467, "w": 201, "h": 86, "lines": ["Exposed network capital", "& lost CO\u2082 abatement"]},
         {"id": "out_r4",   "role": "output",      "x": 1146, "y": 658, "w": 201, "h": 85, "lines": ["2050 potential without", "fossil power"]},
     ]
 

@@ -1,9 +1,9 @@
-# Climate warming reduces the global economic potential of waste heat for buildings
+# Climate warming undermines waste heat for urban heating decarbonization
 
 **Authors:** Hongdi Fu & Haoran Zhang (Peking University)  
 **Version:** 1.0.0
 
-This repository provides the modelling, optimization, climate-experiment and figure-generation code for the study *"Climate warming reduces the global economic potential of waste heat for buildings"*.
+This repository provides the modelling, optimization, climate-experiment and figure-generation code for the study *"Climate warming undermines waste heat for urban heating decarbonization"*.
 
 ---
 
@@ -42,13 +42,12 @@ pip install -r requirements.txt
 
 ## Data Setup & Reproduction
 
-1. Download the companion processed data archive (`Zenodo_Data_v1.0.0.zip`) from [Zenodo](https://doi.org/10.5281/zenodo.24492004) and extract `data/` and `figures/source_data/` into the repository root (or point `WASTE_HEAT_ROOT` to the extracted directory). For global map basemaps (Fig. 3a, Extended Data Fig. 4a,b and Supplementary Figs. 1a and 8a) and upstream municipal aggregation, download GADM v4.1 (`gadm_410-levels.gpkg`, not redistributed per GADM licence terms) from https://gadm.org/ or run `python -m code.climate.fetch_supplementary_inputs` to obtain the ZIP. Extract `gadm_410-levels.gpkg` to `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`. The first call to `load_world_basemap()` generates the simplified basemap cache.
+1. Download the companion processed data archive (`Zenodo_Data_v1.0.0.zip`) from Zenodo and extract `data/` and `figures/source_data/` into the repository root (or point `WASTE_HEAT_ROOT` to the extracted directory). For global map basemaps (Fig. 3a, Extended Data Fig. 4a,b and Supplementary Figs. 1a and 8a) and upstream municipal aggregation, download GADM v4.1 (`gadm_410-levels.gpkg`, not redistributed per GADM licence terms) directly from https://gadm.org/ (or via `python -m code.climate.fetch_supplementary_inputs`) to `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`; `load_world_basemap()` generates the simplified basemap cache automatically on first run.
 2. Run the automated verification tests:
    ```bash
    pytest
    ```
-3. The following scripts build the figures and Excel workbooks. Full runs also read intermediate tables from the upstream analysis, including `r2_eq6_global_summary.csv`, `r3_locked_assets_summary.csv` and `validation_3_eu27_vs_manz2024.csv`. The companion archive includes the figure source data.
-
+3. Reproduce all manuscript figures, Extended Data figures, Supplementary figures and Excel workbooks directly from the processed datasets:
    ```bash
    python code/figures/build_figure1_framework.py
    python code/figures/build_main_figures.py

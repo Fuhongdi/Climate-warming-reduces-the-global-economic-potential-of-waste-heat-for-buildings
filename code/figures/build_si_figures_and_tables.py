@@ -582,9 +582,9 @@ def build_supp_fig_6() -> dict:
         _strat_dec((al >= 40.0) & (al < 50.0), "40–50°"),
         _strat_dec((al >= 30.0) & (al < 40.0), "30–40°"),
         _strat_dec(al < 30.0, "<30°"),
-        _strat_dec(mw > 100.0, ">100 MW cities"),
-        _strat_dec((mw >= 10.0) & (mw <= 100.0), "10–100 MW cities"),
-        _strat_dec(mw < 10.0, "1–10 MW cities"),
+        _strat_dec(mw > 100.0, ">100 MW areas"),
+        _strat_dec((mw >= 10.0) & (mw <= 100.0), "10–100 MW areas"),
+        _strat_dec(mw < 10.0, "1–10 MW areas"),
     ][::-1]
 
     yb = np.arange(len(st_list))
@@ -658,7 +658,7 @@ def build_supp_fig_7() -> dict:
     ax_a.set_yticklabels([GCM_LABELS.get(str(m), str(m)) for m in sub2055["model"]], fontsize=FS_COMPACT)
     ax_a.set_xlim(0.0, 92.0)
     ax_a.set_xticks([0, 25, 50, 75])
-    ax_a.set_xlabel("2046–2065 stranded capital\n(billion USD, networks)")
+    ax_a.set_xlabel("2046–2065 exposed capital\n(billion USD, networks)")
 
     # Panel b: Initial Cost-Saving Margin Screening Trade-off Curve
     ax_b = fig.add_subplot(gs[0, 1])
@@ -672,7 +672,7 @@ def build_supp_fig_7() -> dict:
     av_3 = 100.0 * float(df_lk.loc[df_lk["str"] & (df_lk["m0"] < 3.0), "cap"].sum()) / max(1.0, tot_str_cap)
     kp_3 = 100.0 * float(df_lk.loc[df_lk["m0"] >= 3.0, "p0"].sum()) / max(1.0, tot_p0)
 
-    ax_b.plot(cuts, avoided_str, color=COL_CORAL, lw=1.65, label="Stranded capital avoided")
+    ax_b.plot(cuts, avoided_str, color=COL_CORAL, lw=1.65, label="Exposed capital avoided")
     ax_b.plot(cuts, kept_p0, color=COL_SAPPHIRE, lw=1.65, ls="--", label="Present $P_0$ retained")
     ax_b.axvline(3.0, color="#000000", ls=":", lw=0.75)
     ax_b.scatter([3.0, 3.0], [av_3, kp_3], s=18, color=[COL_CORAL, COL_SAPPHIRE], zorder=5)
@@ -1181,7 +1181,7 @@ def build_excel_workbooks() -> None:
         ["GWL_Crossings", "Exact 20 year CMIP6 global warming level windows at 1.5, 2.0 and 3.0 °C above 1850–1900"],
         ["Calibrated_183_Regions", "Calibrated space heating and water heating parameters, energy prices and grid emission intensities across 183 regions"],
     ], columns=["Worksheet", "Contents and units"])
-    _style_sheet(ws_readme, readme_df, "Supplementary Data 1 | Climate warming reduces the global economic potential of waste heat for buildings")
+    _style_sheet(ws_readme, readme_df, "Supplementary Data 1 | Climate warming undermines waste heat for urban heating decarbonization")
 
     df_g = pd.read_parquet(SCEN_DIR / "global_scenarios_summary.parquet")
     keep_g = [
@@ -1245,7 +1245,7 @@ def build_excel_workbooks() -> None:
     fig_csvs = [
         ("Fig2_Trajectory", SRC_DIR / "Figure2_source_data.csv", "Source Data for Fig. 2 | Global 1946–2100 Economic Waste Heat Potential Trajectory"),
         ("Fig3_Decomposition", SRC_DIR / "Figure3_source_data.csv", "Source Data for Fig. 3 | Global, National and Stratified Additive Decomposition (2046–2065 SSP2-4.5)"),
-        ("Fig4_PresentNetworks", SRC_DIR / "Figure4_source_data.csv", "Source Data for Fig. 4 | Stranded Pipe Capital, Cost Savings and Carbon Abatement Across Fixed Networks"),
+        ("Fig4_PresentNetworks", SRC_DIR / "Figure4_source_data.csv", "Source Data for Fig. 4 | Network Capital Exposure, Cost Savings and Carbon Abatement Across Fixed Networks"),
         ("Fig5_Transitions", SRC_DIR / "Figure5_source_data.csv", "Source Data for Fig. 5 | Mid Century 2050 Energy Transitions and Sectoral Supply"),
         ("ED_Fig1d_MILP", SRC_DIR / "Extended_Data_Fig1d_milp_source_data.csv", "Source Data for Extended Data Fig. 1d | Exact HiGHS MILP vs Priority Queue Benchmark"),
         ("ED_Fig2_Dispatch", SRC_DIR / "Extended_Data_Fig2_dispatch_and_grades_source_data.csv", "Source Data for Extended Data Fig. 2 | Monthly Waste Heat Dispatch by Upgrade Technology"),
