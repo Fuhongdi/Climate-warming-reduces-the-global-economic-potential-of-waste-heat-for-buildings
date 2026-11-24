@@ -26,7 +26,7 @@ warnings.filterwarnings("ignore")
 
 ROOT = Path(os.environ.get("WASTE_HEAT_ROOT", Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(ROOT / "code/figures"))
-from figure_utils import MM, DOUBLE_COL, check_typography, check_palette_contrast  # noqa: E402
+from figure_utils import MM, DOUBLE_COL, check_typography, check_palette_contrast, load_world_basemap  # noqa: E402
 
 DATA_PROC = ROOT / "data/processed"
 SCEN_DIR = DATA_PROC / "scenarios_2025"
@@ -592,7 +592,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     z_zero = z_all[(z_all[u_col] > 0) & (z_all[p_col] <= 0)].copy()
 
     df_z = pd.read_parquet(SCEN_DIR / "r2_decomposition/r2_zone_midcentury_ssp245_ensmean.parquet")
-    gdf_bg = gpd.read_parquet(SCEN_DIR / "_world_coastline_simplified.parquet").to_crs("+proj=robin")
+    gdf_bg = load_world_basemap(ROOT).to_crs("+proj=robin")
     trans = Transformer.from_crs("EPSG:4326", "+proj=robin", always_xy=True)
 
     lats_b = np.linspace(-90, 90, 181)

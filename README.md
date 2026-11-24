@@ -42,12 +42,13 @@ pip install -r requirements.txt
 
 ## Data Setup & Reproduction
 
-1. Download the companion processed data archive (`Zenodo_Data_v1.0.0.zip`) from Zenodo and extract `data/` and `figures/source_data/` into the repository root (or point `WASTE_HEAT_ROOT` to the extracted directory).
+1. Download the companion processed data archive (`Zenodo_Data_v1.0.0.zip`) from Zenodo and extract `data/` and `figures/source_data/` into the repository root (or point `WASTE_HEAT_ROOT` to the extracted directory). For global map basemaps (Fig. 3a, Extended Data Fig. 4a,b and Supplementary Figs. 1a and 8a) and upstream municipal aggregation, download GADM v4.1 (`gadm_410-levels.gpkg`, not redistributed per GADM licence terms) from https://gadm.org/ or run `python -m code.climate.fetch_supplementary_inputs` to obtain the ZIP. Extract `gadm_410-levels.gpkg` to `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`. The first call to `load_world_basemap()` generates the simplified basemap cache.
 2. Run the automated verification tests:
    ```bash
    pytest
    ```
-3. Reproduce all manuscript figures, Extended Data figures, Supplementary figures and Excel workbooks directly from the processed datasets:
+3. The following scripts build the figures and Excel workbooks. Full runs also read intermediate tables from the upstream analysis, including `r2_eq6_global_summary.csv`, `r3_locked_assets_summary.csv` and `validation_3_eu27_vs_manz2024.csv`. The companion archive includes the figure source data.
+
    ```bash
    python code/figures/build_figure1_framework.py
    python code/figures/build_main_figures.py

@@ -1,6 +1,7 @@
-"""Typography and colour-contrast utilities for 180 mm two-column journal figures."""
+"""Typography, colour-contrast and basemap utilities for 180 mm two-column journal figures."""
 from __future__ import annotations
 
+from pathlib import Path
 import matplotlib.colors as mcolors
 from matplotlib.text import Text
 
@@ -11,6 +12,33 @@ DOUBLE_COL: float = 180.0 * MM
 MIN_PT: float = 5.0
 MAX_BODY_PT: float = 10.5
 MAX_PANEL_PT: float = 12.0
+
+
+def load_world_basemap(root_dir: Path):
+    """Load cached simplified GADM v4.1 ADM_0 basemap, or generate it on first run from user-downloaded gadm_410-levels.gpkg."""
+    import geopandas as gpd
+
+    cache_pq = Path(root_dir) / "data/processed/scenarios_2025/_world_coastline_simplified.parquet"
+    if cache_pq.exists():
+        return gpd.read_parquet(cache_pq)
+
+    for gp in (
+        Path(root_dir) / "data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg",
+        Path(root_dir) / "data/raw/gadm_410-levels.gpkg",
+    ):
+        if gp.exists():
+            gdf0 = gpd.read_file(gp, layer="ADM_0")
+            gdf0["geometry"] = gdf0["geometry"].simplify(0.20, preserve_topology=True)
+            cache_pq.parent.mkdir(parents=True, exist_ok=True)
+            out_gdf = gdf0[["GID_0", "geometry"]]
+            out_gdf.to_parquet(cache_pq, index=False)
+            return out_gdf
+
+    raise FileNotFoundError(
+        "GADM v4.1 basemap not found (not redistributed per GADM licence). "
+        "Download the GADM 4.1 levels ZIP from https://gadm.org/ or run `python -m code.climate.fetch_supplementary_inputs`, "
+        "then extract gadm_410-levels.gpkg to `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`."
+    )
 
 
 def _is_panel_tag(text: str) -> bool:

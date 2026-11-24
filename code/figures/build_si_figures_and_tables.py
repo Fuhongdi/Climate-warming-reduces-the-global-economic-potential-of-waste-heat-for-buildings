@@ -53,7 +53,7 @@ from code.common.parameters import (  # noqa: E402
     STATION_LIFETIME_YR,
     USD_PER_EUR_2025,
 )
-from figure_utils import MM, DOUBLE_COL, check_typography  # noqa: E402
+from figure_utils import MM, DOUBLE_COL, check_typography, load_world_basemap  # noqa: E402
 from build_extended_figures import (  # noqa: E402
     COL_APRICOT,
     COL_BLDG_SLATE,
@@ -103,7 +103,7 @@ GCM_COLORS = {
 
 
 def _robinson_base():
-    gdf_bg = gpd.read_parquet(SCEN_DIR / "_world_coastline_simplified.parquet")
+    gdf_bg = load_world_basemap(ROOT)
     gdf_bg = gdf_bg[gdf_bg["GID_0"] != "ATA"].copy().to_crs("+proj=robin")
     trans = Transformer.from_crs("EPSG:4326", "+proj=robin", always_xy=True)
     lats_b = np.linspace(-58, 78, 181)

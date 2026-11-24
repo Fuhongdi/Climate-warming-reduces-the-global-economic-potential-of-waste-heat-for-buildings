@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "code/figures"))
 
 from code.common.parameters import HP_INDUSTRIAL_POWER_2025, HP_WASTEWATER_2025  # noqa: E402
 from code.matching.zone_climate_evaluator import ashp_daily_cop  # noqa: E402
-from figure_utils import MM, DOUBLE_COL, check_typography, check_palette_contrast  # noqa: E402
+from figure_utils import MM, DOUBLE_COL, check_typography, check_palette_contrast, load_world_basemap  # noqa: E402
 
 DATA_PROC = ROOT / "data/processed"
 SCEN_DIR = DATA_PROC / "scenarios_2025"
@@ -751,7 +751,7 @@ def build_ed_fig_4() -> dict:
     df_dec = pd.read_parquet(SCEN_DIR / "r2_decomposition/r2_eq6_decomposition_all.parquet")
     df_geq = pd.read_csv(SCEN_DIR / "r2_decomposition/r2_eq6_global_summary.csv")
 
-    gdf_bg = gpd.read_parquet(SCEN_DIR / "_world_coastline_simplified.parquet")
+    gdf_bg = load_world_basemap(ROOT)
     gdf_bg = gdf_bg[gdf_bg["GID_0"] != "ATA"].copy().to_crs("+proj=robin")
     trans = Transformer.from_crs("EPSG:4326", "+proj=robin", always_xy=True)
 
