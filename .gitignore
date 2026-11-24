@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+env/
+.venv/
+data/raw/
+data/interim/
+data/processed/
+figures/main/
+figures/extended/
+figures/si/
+manuscript/
+.DS_Store
