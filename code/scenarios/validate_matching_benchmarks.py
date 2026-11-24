@@ -128,7 +128,7 @@ def main() -> None:
   # 2. Northern China Comparison vs Liu et al. (2024, Nature Energy)
   # -------------------------------------------------------------------------
   chn_zones = df_zones[df_zones["iso3"] == "CHN"].copy()
-  chn_zones["is_north"] = chn_zones["adm1_name"].isin(NORTHERN_CHINA_ADM1) | (chn_zones["lat"] >= 33.0)
+  chn_zones["is_north"] = (chn_zones["adm1_name"].isin(NORTHERN_CHINA_ADM1) if "adm1_name" in chn_zones.columns else (chn_zones["region_id"] == "CHN_NORTH")) | (chn_zones["lat"] >= 33.0)
   north_zids = set(chn_zones.loc[chn_zones["is_north"], "zone_id"])
 
   chn_links = df_links[df_links["iso3"] == "CHN"].copy()

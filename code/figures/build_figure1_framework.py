@@ -23,10 +23,10 @@ STYLE_CFG = {
     "rec_x": 477,
     "rec_w": 206,
     "roles": {
-        "data_input":  {"fill": "#E8F0FA", "stroke": "#3B4F73"},
-        "parameter":   {"fill": "#D8F3EE", "stroke": "#2E7D73"},
-        "calculation": {"fill": "#FEFBE2", "stroke": "#BCA96B"},
-        "output":      {"fill": "#F19F89", "stroke": "#A45B4F"},
+        "data_input":  {"fill": "#B9D4EE", "stroke": "#244D85"},
+        "parameter":   {"fill": "#F2F3F5", "stroke": "#5C6672"},
+        "calculation": {"fill": "#FCE9AE", "stroke": "#B88628"},
+        "output":      {"fill": "#EE9B82", "stroke": "#A63A2B"},
     },
 }
 

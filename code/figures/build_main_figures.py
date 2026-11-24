@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate Main Figures 2–5 and export underlying panel source data tables."""
 from __future__ import annotations
+import math
 import os
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -25,6 +26,8 @@ from scipy import stats
 warnings.filterwarnings("ignore")
 
 ROOT = Path(os.environ.get("WASTE_HEAT_ROOT", Path(__file__).resolve().parents[2]))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "code/figures"))
 from figure_utils import MM, DOUBLE_COL, check_typography, check_palette_contrast, load_world_basemap  # noqa: E402
 
@@ -49,24 +52,25 @@ INK = "#000000"    # 100% pure black text everywhere!
 SPINE_COL = "#000000"
 
 SEMANTIC_PALETTE = {
-    "Power plants / SSP1-2.6": "#36558F",
-    "Urban / Savings": "#4DBBD5",
-    "Wastewater / Seasonal": "#159A8A",
-    "Heavy industry / SSP2-4.5": "#E59866",
-    "Viability loss / SSP3-7.0": "#D95338",
-    "Building / Sensitivity": "#7E8EB0",
+    "Power plants / SSP1-2.6": "#264B82",
+    "Urban / Savings": "#70CBE6",
+    "Wastewater / Seasonal": "#2B9EB3",
+    "Heavy industry / SSP2-4.5": "#E8A638",
+    "Viability loss / SSP3-7.0": "#C8422E",
+    "Building / Sensitivity": "#4A525D",
 }
 
-COL_SAPPHIRE = "#36558F"
-COL_BLDG_SLATE = "#7E8EB0"
-COL_SKY_CYAN = "#4DBBD5"
-COL_DEM_BLUE = "#3E92CC"
-COL_TECH_SLATE = "#5B8FA8"
-COL_EMERALD = "#159A8A"
-COL_APRICOT = "#E59866"
-COL_SSP2 = "#D68952"
-COL_CORAL = "#D95338"
-COL_CORAL_SOFT = "#EB7B64"
+COL_SAPPHIRE = "#264B82"
+COL_BLDG_SLATE = "#4A525D"
+COL_SKY_CYAN = "#70CBE6"
+COL_DEM_BLUE = "#427FB8"
+COL_SEASONAL = "#8CD4EC"
+COL_TECH_SLATE = "#4A7C9B"
+COL_EMERALD = "#2B9EB3"
+COL_APRICOT = "#E8A638"
+COL_SSP2 = "#E6A532"
+COL_CORAL = "#C8422E"
+COL_CORAL_SOFT = "#D96A55"
 COL_MIST_DH = "#DAE2EC"
 COL_RIBBON_FADE = "#E2E8F0"
 COL_HIST_BG = "#F2F6FA"
@@ -75,12 +79,12 @@ COL_BLUSH_ZONE = "#FBE9E5"
 COL_ZERO_DOT = "#8E9FB1"
 
 # Refined Harmonious Nature Energy 5-Sector Palette for Figure 5
-F5_POWER = "#4E79A7"     # Nordic steel-cerulean
-F5_STEEL = "#E06D53"     # Warm terracotta-coral
-F5_REFINING = "#F2B476"  # Golden sand-apricot
-F5_CEMENT = "#68B0AB"    # Glacier mist-teal
-F5_CHEM = "#2E8B6E"      # Crisp pine-emerald
-F5_BAND = "#9EB6D4"      # Soft slate-cerulean range band
+F5_POWER = "#355C96"     # Royal cobalt
+F5_STEEL = "#C84632"     # Terracotta vermilion
+F5_REFINING = "#EFC06E"  # Warm ochre sand
+F5_CEMENT = "#88C6D8"    # Glacier mist cyan
+F5_CHEM = "#19384A"      # Deep petrol slate
+F5_BAND = "#9DB4D0"      # Soft cerulean-slate range band
 
 GCM_ORDER = [
     ("gfdl-esm4",     "GFDL-ESM4",     "o"),
@@ -673,8 +677,6 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     ax_pac.set_xticks([0, 1, 2])
     ax_pac.text(0.46, 1.24, "Technical vs Economic\npotential (EJ yr$^{-1}$)", transform=ax_pac.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
     ax_pac.legend(loc="lower center", bbox_to_anchor=(0.46, 1.00), ncol=2, frameon=False, fontsize=FS_COMPACT, handlelength=0.8, columnspacing=0.6, handletextpad=0.3)
-    ax_pac.text(0.60, -0.24, "8 cold countries hold 89.9%\nof economic potential", transform=ax_pac.transAxes, ha="center", va="top", fontsize=FS_COMPACT, linespacing=1.12,
-                bbox=dict(boxstyle="square,pad=0.05", facecolor="white", edgecolor="none", alpha=0.90))
     lock_spines_above_data(ax_pac)
 
     # Use real Line2D markers for map legend so 100% of Text objects are pure #000000!
@@ -695,7 +697,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
 
     leg_bc = [
         mpatches.Patch(facecolor=COL_DEM_BLUE, edgecolor="none", label="Heating demand"),
-        mpatches.Patch(facecolor=COL_EMERALD, edgecolor="none", label="Seasonal matching"),
+        mpatches.Patch(facecolor=COL_SEASONAL, edgecolor="none", label="Seasonal matching"),
         mpatches.Patch(facecolor=COL_CORAL, edgecolor="none", label="Economic viability"),
         mpl.lines.Line2D([], [], color="#000000", marker="D", lw=0.85, ms=3.5, label="Net change"),
     ]
@@ -728,7 +730,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     highlight_b = {"Global (2046–2065 SSP2-4.5)", "Global (2081–2100 SSP3-7.0)", "Russia", "Germany", "China", "Denmark", "Italy", "Sweden"}
     for yi, r in enumerate(rows_b):
         neg_l, pos_l = 0.0, 0.0
-        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_EMERALD)]:
+        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_SEASONAL)]:
             if val < 0:
                 ax_b.barh(yi, val, left=neg_l, height=0.66, color=col, edgecolor="none", zorder=3)
                 if neg_l < -0.05:
@@ -816,7 +818,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     yc = np.arange(len(rows_c))
     for yi, r in enumerate(rows_c):
         neg_l, pos_l = 0.0, 0.0
-        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_EMERALD)]:
+        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_SEASONAL)]:
             if val < 0:
                 ax_c.barh(yi, val, left=neg_l, height=0.58, color=col, edgecolor="none", zorder=3)
                 if neg_l < -0.05:
@@ -962,7 +964,7 @@ def build_figure_4() -> dict:
     cdf_handles = []
     for vals, wts, col, ls, lbl_c in [
         (df_lk["lcoh0"].to_numpy(), df_lk["d0"].to_numpy(), COL_SAPPHIRE, "-", "Present (13.25)"),
-        (df_lk_near["lcoh_fut_usd_per_gj"].to_numpy(), df_lk_near["sub_D_fut_gj_yr"].to_numpy(), COL_EMERALD, "--", "2026–2045 (13.61)"),
+        (df_lk_near["lcoh_fut_usd_per_gj"].to_numpy(), df_lk_near["sub_D_fut_gj_yr"].to_numpy(), COL_SSP2, "--", "2026–2045 (13.61)"),
         (df_lk["lcoh_fut"].to_numpy(), df_lk["dfut"].to_numpy(), COL_CORAL, "-", "2046–2065 (14.01)"),
     ]:
         ix = np.argsort(vals)
@@ -1086,22 +1088,162 @@ def build_figure_4() -> dict:
     lock_spines_above_data(ax_c2)
 
     clean_ax(ax_d, "y")
-    df_mid_all["comp_lcoh"] = df_mid_all["lcoh_fut_usd_per_gj"] + df_mid_all["net_benefit_fut_usd_yr"] / np.maximum(1.0, df_mid_all["sub_D_fut_gj_yr"])
-    comp_bench = float(np.average(df_mid_all["comp_lcoh"], weights=df_mid_all["sub_D_fut_gj_yr"]))
+    from code.common.parameters import (
+        PEAKING_ELEC_BOILER_2025,
+        PEAKING_GAS_BOILER_2025,
+        PIPE_PUMP_ELEC_MWH_PER_MWH_TH,
+        PIPE_VAR_OM_EUR_PER_MWH_KM,
+        USD_PER_EUR_2025,
+    )
+    from code.common.paths import GJ_PER_MW_DAY, GJ_PER_MWH
+    from code.matching.solver import TechConfig, crf, get_upgrade_params
 
-    s_frac = np.linspace(0, 0.35, 71)
-    ax_d.axhspan(comp_bench, 24.0, facecolor=COL_BLUSH_ZONE, zorder=0)
-    ax_d.axhline(comp_bench, ls="--", lw=0.65, color="#000000", zorder=2)
-    ax_d.plot(s_frac * 100.0, 14.01 + s_frac * 24.2, color=COL_SAPPHIRE, lw=1.75, zorder=4)
-    ax_d.scatter([0], [14.01], color=COL_SAPPHIRE, marker="D", s=18, zorder=5)
-    ax_d.text(1.3, 13.75, "14.01 USD GJ$^{-1}$", fontsize=FS_COMPACT, va="top", ha="left")
-    ax_d.text(14.0, 16.4, "+24.2 USD GJ$^{-1}$ per stored GJ\n   (30% heat loss)", fontsize=FS_COMPACT, va="top", ha="left", linespacing=1.15)
-    ax_d.text(2.0, comp_bench + 1.0, "Costlier than building\nair source heat pumps", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.15)
+    r0_idx = pd.read_parquet(SCEN_DIR / "R1__obs__2006_2025_selected_links.parquet").set_index(["stream_id", "zone_id"])
+    rp_idx = pd.read_parquet(DATA_PROC / "sinks_2025/calibrated_region_parameters_2025.parquet").set_index("region_id")
+    streams_idx = pd.read_parquet(DATA_PROC / "sources_2025/sources_2025_streams.parquet").set_index("stream_id")
+
+    cfg_ptes = TechConfig(discount_rate=0.07, is_4gdh=False, use_2050_dh_tech=False)
+    eta_ptes = 0.70
+    c_ptes_cap = (crf(0.07, 35.0) + 0.01) * (172.2 * USD_PER_EUR_2025) / eta_ptes
+
+    s_frac = np.linspace(0.0, 0.35, 36)
+    s_pct = s_frac * 100.0
+    curves_un, curves_all = [], []
+    bench_un_vals, bench_all_vals = [], []
+    rescued_counts, un_counts = [], []
+    ptes_rows = []
+
+    for fp in mid_files:
+        m_id = fp.name.split("__")[1]
+        df_m = pd.read_parquet(fp)
+        stream_rem_gj = streams_idx["q3g_annual_gj"].astype(float).to_dict()
+
+        n_m = len(df_m)
+        h_deliv_fut = np.zeros(n_m)
+        h_surp_chg_max = np.zeros(n_m)
+        c_src_var = np.zeros(n_m)
+        c_pk_var = np.zeros(n_m)
+
+        for idx_r, row_m in enumerate(df_m.itertuples(index=False)):
+            sid, zid = str(row_m.stream_id), str(row_m.zone_id)
+            r_base = r0_idx.loc[(sid, zid)]
+            up_mode = str(r_base["upgrade_mode"])
+            ell_km = float(r_base["ell_km"])
+            eta_tot = float(r_base["eta_tot"])
+            kappa, cop, _, _, eq_vom_eur = get_upgrade_params(up_mode, cfg_ptes)
+
+            p_el = float(rp_idx.loc[row_m.region_id, "p_elec_pretax_usd_per_mwh"])
+            p_ng = float(rp_idx.loc[row_m.region_id, "p_gas_pretax_usd_per_gj"])
+            has_gas = bool(rp_idx.loc[row_m.region_id, "has_gas"])
+
+            hd = float(row_m.P_fut_gj_yr) * kappa
+            h_deliv_fut[idx_r] = hd
+
+            q_used_raw = hd / max(1e-9, kappa * eta_tot)
+            q_avail_raw = max(0.0, stream_rem_gj.get(sid, 0.0) - q_used_raw)
+            stream_rem_gj[sid] = q_avail_raw
+
+            c_pipe_ann_gj = float(row_m.c_mw) * GJ_PER_MW_DAY * 365.25
+            h_surp_chg_max[idx_r] = min(max(0.0, c_pipe_ann_gj - hd), q_avail_raw * kappa * eta_tot)
+
+            mwh_src_per_gj = (1.0 / max(1e-9, eta_tot)) / GJ_PER_MWH
+            hp_mwh = (mwh_src_per_gj / cop) if math.isfinite(cop) else 0.0
+            pump_mwh = PIPE_PUMP_ELEC_MWH_PER_MWH_TH * mwh_src_per_gj
+            vom_usd = (PIPE_VAR_OM_EUR_PER_MWH_KM * ell_km + eq_vom_eur) * mwh_src_per_gj * USD_PER_EUR_2025
+            c_src_var[idx_r] = vom_usd + (hp_mwh + pump_mwh) * p_el
+
+            if has_gas:
+                sp = PEAKING_GAS_BOILER_2025
+                c_pk_var[idx_r] = p_ng / sp.efficiency_lhv + (
+                    sp.aux_elec_mwh_per_mwh_h * p_el + sp.var_om_non_elec_eur_per_mwh_h * USD_PER_EUR_2025
+                ) / GJ_PER_MWH
+            else:
+                sp = PEAKING_ELEC_BOILER_2025
+                c_pk_var[idx_r] = (p_el / sp.efficiency_lhv + sp.var_om_non_elec_eur_per_mwh_h * USD_PER_EUR_2025) / GJ_PER_MWH
+
+        sub_d = np.maximum(1.0, df_m["sub_D_fut_gj_yr"].values.astype(float))
+        lcoh0_fut = df_m["lcoh_fut_usd_per_gj"].values.astype(float)
+        comp_lcoh = lcoh0_fut + df_m["net_benefit_fut_usd_yr"].values.astype(float) / sub_d
+        un_mask = df_m["is_loss_making_fut"].values.astype(bool)
+
+        pk_max_share = np.maximum(0.0, sub_d - h_deliv_fut) / sub_d
+        surp_chg_max_share = h_surp_chg_max / sub_d
+        surp_dis_max_share = eta_ptes * surp_chg_max_share
+
+        c_u_s, c_a_s = [], []
+        best_un = lcoh0_fut[un_mask].copy()
+        for s_v in s_frac:
+            s_disp = np.minimum(s_v, np.minimum(pk_max_share, surp_dis_max_share))
+            rem_chg = np.maximum(0.0, surp_chg_max_share - s_disp / eta_ptes)
+            s_sub = np.minimum(s_v - s_disp, rem_chg / (1.0 / eta_ptes - 1.0))
+            nl = (
+                lcoh0_fut
+                + s_disp * (c_ptes_cap + c_src_var / eta_ptes - c_pk_var)
+                + s_sub * (c_ptes_cap + (1.0 / eta_ptes - 1.0) * c_src_var)
+            )
+            if s_v > 0.0:
+                best_un = np.minimum(best_un, nl[un_mask])
+            c_a_s.append(float(np.average(nl, weights=sub_d)))
+            c_u_s.append(float(np.average(nl[un_mask], weights=sub_d[un_mask])))
+
+        rescued_counts.append(int(np.sum(best_un < comp_lcoh[un_mask])))
+        un_counts.append(int(np.sum(un_mask)))
+        bench_un_vals.append(float(np.average(comp_lcoh[un_mask], weights=sub_d[un_mask])))
+        bench_all_vals.append(float(np.average(comp_lcoh, weights=sub_d)))
+        curves_un.append(c_u_s)
+        curves_all.append(c_a_s)
+
+    arr_un = np.asarray(curves_un)
+    arr_all = np.asarray(curves_all)
+    un_mean, un_min, un_max = arr_un.mean(axis=0), arr_un.min(axis=0), arr_un.max(axis=0)
+    all_mean, all_min, all_max = arr_all.mean(axis=0), arr_all.min(axis=0), arr_all.max(axis=0)
+    comp_bench_un = float(np.mean(bench_un_vals))
+    comp_bench_all = float(np.mean(bench_all_vals))
+    unrescued_pct = 100.0 * (1.0 - float(np.sum(rescued_counts)) / float(np.sum(un_counts)))
+
+    for idx_s, sp_val in enumerate(s_pct):
+        ptes_rows.append({
+            "storage_share_pct": float(round(sp_val, 2)),
+            "uneconomic_lcoh_mean_usd_per_gj": float(un_mean[idx_s]),
+            "uneconomic_lcoh_min_usd_per_gj": float(un_min[idx_s]),
+            "uneconomic_lcoh_max_usd_per_gj": float(un_max[idx_s]),
+            "uneconomic_competing_benchmark_usd_per_gj": comp_bench_un,
+            "all_networks_lcoh_mean_usd_per_gj": float(all_mean[idx_s]),
+            "all_networks_lcoh_min_usd_per_gj": float(all_min[idx_s]),
+            "all_networks_lcoh_max_usd_per_gj": float(all_max[idx_s]),
+            "all_networks_competing_benchmark_usd_per_gj": comp_bench_all,
+            "uneconomic_unrescued_share_pct": unrescued_pct,
+        })
+    pd.DataFrame(ptes_rows).to_csv(SRC_DIR / "Figure4d_ptes_source_data.csv", index=False)
+
+    ax_d.axhspan(comp_bench_un, 34.0, facecolor=COL_BLUSH_ZONE, zorder=0)
+    ax_d.axhline(comp_bench_un, ls=":", lw=0.75, color=COL_CORAL, zorder=2)
+    ax_d.axhline(comp_bench_all, ls="--", lw=0.65, color="#000000", zorder=2)
+
+    ax_d.fill_between(s_pct, un_min, un_max, facecolor=COL_CORAL, alpha=0.17, edgecolor="none", zorder=2.6)
+    ax_d.plot(s_pct, un_mean, color=COL_CORAL, lw=1.70, zorder=4.2)
+    ax_d.scatter([0], [un_mean[0]], color=COL_CORAL, marker="o", s=16, zorder=5)
+
+    ax_d.fill_between(s_pct, all_min, all_max, facecolor=COL_SAPPHIRE, alpha=0.16, edgecolor="none", zorder=2.5)
+    ax_d.plot(s_pct, all_mean, color=COL_SAPPHIRE, lw=1.70, zorder=4.0)
+    ax_d.scatter([0], [all_mean[0]], color=COL_SAPPHIRE, marker="D", s=16, zorder=5)
+
+    leg_d = [
+        mpl.lines.Line2D([], [], color=COL_CORAL, lw=1.70, marker="o", ms=3.6, label="Uneconomic networks (n = 782)"),
+        mpl.lines.Line2D([], [], color=COL_SAPPHIRE, lw=1.70, marker="D", ms=3.4, label="All fixed networks (n = 5,327)"),
+    ]
+    ax_d.legend(handles=leg_d, loc="upper left", bbox_to_anchor=(-0.01, 1.02), frameon=False, fontsize=FS_COMPACT, handlelength=1.15, handletextpad=0.4, labelspacing=0.22)
+
+    ax_d.text(1.2, 26.85, f"{un_mean[0]:.2f} USD GJ$^{{-1}}$ at 0%\n({unrescued_pct:.1f}% remain uneconomic)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.12)
+    ax_d.text(1.2, comp_bench_un - 0.24, f"Uneconomic benchmark ({comp_bench_un:.1f})", fontsize=FS_COMPACT, va="top", ha="left")
+    ax_d.text(1.2, comp_bench_all + 0.20, f"All-network benchmark ({comp_bench_all:.2f})", fontsize=FS_COMPACT, va="bottom", ha="left")
+    ax_d.text(1.3, 13.48, f"{all_mean[0]:.2f} USD GJ$^{{-1}}$", fontsize=FS_COMPACT, va="top", ha="left")
+    ax_d.text(16.2, 15.65, "+24.2 USD GJ$^{-1}$ per stored GJ\n(30% loss, net of boiler offset)", fontsize=FS_COMPACT, va="top", ha="left", linespacing=1.12)
 
     ax_d.set_xlim(0, 35)
-    ax_d.set_ylim(12, 24)
+    ax_d.set_ylim(12, 34)
     ax_d.set_xticks([0, 5, 10, 15, 20, 25, 30, 35])
-    ax_d.set_yticks([12, 15, 18, 21, 24])
+    ax_d.set_yticks([12, 16, 20, 24, 28, 32])
     ax_d.set_xlabel("Share of annual heat routed via seasonal pit storage (%)")
     ax_d.set_ylabel("Delivered heat cost\n(USD GJ$^{-1}$)")
     lock_spines_above_data(ax_d)

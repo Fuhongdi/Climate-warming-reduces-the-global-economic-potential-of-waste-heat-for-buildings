@@ -47,19 +47,19 @@ FS_COMPACT = 5.6
 INK = "#000000"
 SPINE_COL = "#000000"
 
-COL_SAPPHIRE = "#36558F"
-COL_BLDG_SLATE = "#7E8EB0"
-COL_SKY_CYAN = "#4DBBD5"
-COL_DEM_BLUE = "#3E92CC"
-COL_TECH_SLATE = "#5B8FA8"
-COL_EMERALD = "#159A8A"
-COL_APRICOT = "#E59866"
-COL_SSP2 = "#D68952"
-COL_CORAL = "#D95338"
-COL_CORAL_SOFT = "#EB7B64"
+COL_SAPPHIRE = "#264B82"
+COL_BLDG_SLATE = "#4A525D"
+COL_SKY_CYAN = "#70CBE6"
+COL_DEM_BLUE = "#427FB8"
+COL_TECH_SLATE = "#4A7C9B"
+COL_EMERALD = "#2B9EB3"
+COL_APRICOT = "#E8A638"
+COL_SSP2 = "#E6A532"
+COL_CORAL = "#C8422E"
+COL_CORAL_SOFT = "#D96A55"
 COL_HIST_BG = "#F2F6FA"
 COL_ICE_ZONE = "#EAF2F8"
-COL_BAND = "#9EB6D4"
+COL_BAND = "#9DB4D0"
 
 GCM_ORDER = [
     ("gfdl-esm4",     "GFDL-ESM4",     "o"),
@@ -292,7 +292,7 @@ def build_ed_fig_1() -> dict:
 
     for x_s, y_s, mk, col, lbl in [
         (comb["ember_comb_twh_2025"], comb["ct_comb_twh_2025"], "o", COL_SAPPHIRE, f"Combustion power TWh ($r$ = {r_comb:.3f})"),
-        (nuc["ember_nuclear_gross_twh_2025"], nuc["pris_nuclear_net_twh_2025"], "^", COL_EMERALD, f"Nuclear power TWh ($r$ = {r_nuc:.3f})"),
+        (nuc["ember_nuclear_gross_twh_2025"], nuc["pris_nuclear_net_twh_2025"], "^", COL_SKY_CYAN, f"Nuclear power TWh ($r$ = {r_nuc:.3f})"),
         (steel["official_2025_mt"], steel["ct_2025_mt"], "s", COL_APRICOT, f"Crude steel Mt ($r$ = {r_stl:.3f})"),
         (cem["official_2025_mt"], cem["ct_2025_mt"], "D", COL_CORAL, f"Cement Mt ($r$ = {r_cem:.3f})"),
     ]:
@@ -506,7 +506,7 @@ def build_ed_fig_2(df_glob: pd.DataFrame) -> dict:
     ax_b.text(-19.4, HP_WASTEWATER_2025.cop - 0.10, f"Source electric heat pump, wastewater ({HP_WASTEWATER_2025.cop:.2f})", ha="left", va="top", fontsize=FS_COMPACT)
 
     ax_b.plot(t_grid, cop_25, color=COL_SAPPHIRE, lw=1.65, zorder=4, label="2025 building air source HP (SCOP 2.99)")
-    ax_b.plot(t_grid, cop_50, color=COL_EMERALD, lw=1.65, ls="-.", zorder=4.2, label="2050 building air source HP (SCOP 4.29)")
+    ax_b.plot(t_grid, cop_50, color="#5EC2E6", lw=1.65, ls="-.", zorder=4.2, label="2050 building air source HP (SCOP 4.29)")
 
     ax_b.set_xlim(-20.0, 16.0)
     ax_b.set_ylim(1.1, 6.35)
@@ -844,7 +844,7 @@ def build_ed_fig_4() -> dict:
     yc = np.arange(len(rows_c))
     for yi, r in enumerate(rows_c):
         neg_l, pos_l = 0.0, 0.0
-        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_EMERALD)]:
+        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], "#8CD4EC")]:
             if val < 0:
                 ax_c.barh(yi, val, left=neg_l, height=0.58, color=col, edgecolor="none", zorder=3)
                 if neg_l < -0.05:
@@ -865,7 +865,7 @@ def build_ed_fig_4() -> dict:
 
     leg_c = [
         mpatches.Patch(facecolor=COL_DEM_BLUE, edgecolor="none", label="Heating demand"),
-        mpatches.Patch(facecolor=COL_EMERALD, edgecolor="none", label="Seasonal matching"),
+        mpatches.Patch(facecolor="#8CD4EC", edgecolor="none", label="Seasonal matching"),
         mpatches.Patch(facecolor=COL_CORAL, edgecolor="none", label="Economic viability"),
         mpl.lines.Line2D([], [], color="#000000", marker="D", lw=0.80, ms=3.2, label="Net change"),
     ]

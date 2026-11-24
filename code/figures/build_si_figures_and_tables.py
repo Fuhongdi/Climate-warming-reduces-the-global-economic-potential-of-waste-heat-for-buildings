@@ -86,17 +86,17 @@ SI_DIR = ROOT / "figures/si"
 SRC_DIR = ROOT / "figures/source_data"
 MS_DIR = ROOT / "manuscript"
 
-F5_POWER = "#4E79A7"
-F5_STEEL = "#E06D53"
-F5_REFINING = "#F2B476"
-F5_CEMENT = "#68B0AB"
-F5_CHEM = "#2E8B6E"
+F5_POWER = "#355C96"
+F5_STEEL = "#C84632"
+F5_REFINING = "#EFC06E"
+F5_CEMENT = "#88C6D8"
+F5_CHEM = "#19384A"
 
 GCM_LABELS = dict([(k, lbl) for k, lbl, _ in GCM_ORDER])
 GCM_COLORS = {
     "gfdl-esm4": COL_SAPPHIRE,
     "ipsl-cm6a-lr": COL_SKY_CYAN,
-    "mpi-esm1-2-hr": COL_EMERALD,
+    "mpi-esm1-2-hr": "#586373",
     "mri-esm2-0": COL_APRICOT,
     "ukesm1-0-ll": COL_CORAL,
 }
@@ -307,7 +307,7 @@ def build_supp_fig_3() -> dict:
     s_ng = np.clip(np.sqrt(no_g["baseline_total_demand_gj_yr"].to_numpy() / 1e6) * 1.35, 8.0, 72.0)
 
     ax_a.scatter(has_g["p_gas_pretax_usd_per_gj"], has_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_g, color=COL_SAPPHIRE, alpha=0.70, edgecolors="white", linewidths=0.35, zorder=3, label="Gas grid regions")
-    ax_a.scatter(np.zeros(len(no_g)) + 1.2, no_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_ng, marker="^", color=COL_EMERALD, alpha=0.80, edgecolors="white", linewidths=0.35, zorder=3.5, label="Non-gas regions")
+    ax_a.scatter(np.zeros(len(no_g)) + 1.2, no_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_ng, marker="^", color=COL_APRICOT, alpha=0.90, edgecolors="#333333", linewidths=0.30, zorder=3.5, label="Non-gas regions")
 
     gx = np.linspace(0.5, 40.0, 120)
     ax_a.plot(gx, gx * (2.99 / 1.01), color="#000000", ls="--", lw=0.75, zorder=2, label="2025 parity (SCOP 2.99)")
@@ -453,7 +453,7 @@ def build_supp_fig_5() -> dict:
     p_cdf = 100.0 * np.cumsum(p_w) / float(p_w.sum())
     n_cdf = 100.0 * np.arange(1, len(ell_s) + 1) / len(ell_s)
 
-    ax_a.plot(c_bins[1:], c_cdf, color="#8E9FB1", ls="--", lw=1.25, label="Candidate connections ($n$ = 2.49M)")
+    ax_a.plot(c_bins[1:], c_cdf, color=COL_BLDG_SLATE, ls="--", lw=1.25, label="Candidate connections ($n$ = 2.49M)")
     ax_a.plot(ell_s, n_cdf, color=COL_SKY_CYAN, lw=1.50, label="Selected networks ($n$ = 5,327)")
     ax_a.plot(ell_s, p_cdf, color=COL_SAPPHIRE, lw=1.75, label="Economic potential $P_0$ share")
     ax_a.axvline(50.0, color="#000000", ls=":", lw=0.75)
@@ -517,7 +517,7 @@ def build_supp_fig_6() -> dict:
     ya = np.arange(len(rows_a))
     for yi, r in enumerate(rows_a):
         neg_l, pos_l = 0.0, 0.0
-        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_EMERALD)]:
+        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], "#8CD4EC")]:
             if val < 0:
                 ax_a.barh(yi, val, left=neg_l, height=0.62, color=col, edgecolor="none", zorder=3)
                 if neg_l < -0.05:
@@ -544,7 +544,7 @@ def build_supp_fig_6() -> dict:
 
     leg_top = [
         mpatches.Patch(facecolor=COL_DEM_BLUE, edgecolor="none", label="Heating demand"),
-        mpatches.Patch(facecolor=COL_EMERALD, edgecolor="none", label="Seasonal matching"),
+        mpatches.Patch(facecolor="#8CD4EC", edgecolor="none", label="Seasonal matching"),
         mpatches.Patch(facecolor=COL_CORAL, edgecolor="none", label="Economic viability"),
         mpl.lines.Line2D([], [], color="#000000", marker="D", lw=0.80, ms=3.2, label="Net change"),
     ]
@@ -590,7 +590,7 @@ def build_supp_fig_6() -> dict:
     yb = np.arange(len(st_list))
     for yi, r in enumerate(st_list):
         neg_l, pos_l = 0.0, 0.0
-        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], COL_EMERALD)]:
+        for val, col in [(r["t3"], COL_CORAL), (r["t1"], COL_DEM_BLUE), (r["t2"], "#8CD4EC")]:
             if val < 0:
                 ax_b.barh(yi, val, left=neg_l, height=0.60, color=col, edgecolor="none", zorder=3)
                 if neg_l < -0.05:
@@ -693,7 +693,7 @@ def build_supp_fig_7() -> dict:
     for r_val, col_r, ls_r, lbl_r in [
         (0.10, COL_CORAL, "-.", "$r$ = 10%"),
         (0.07, COL_SAPPHIRE, "-", "$r$ = 7% (central)"),
-        (0.03, COL_EMERALD, "--", "$r$ = 3%"),
+        (0.03, "#5EC2E6", "--", "$r$ = 3%"),
     ]:
         crf = r_val * (1.0 + r_val) ** 35 / ((1.0 + r_val) ** 35 - 1.0)
         dc = ((crf + 0.01) * capex_usd_per_gj) / eta_grid

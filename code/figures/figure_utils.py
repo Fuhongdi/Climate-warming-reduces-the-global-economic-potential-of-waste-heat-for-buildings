@@ -36,8 +36,8 @@ def load_world_basemap(root_dir: Path):
 
     raise FileNotFoundError(
         "GADM v4.1 basemap not found (not redistributed per GADM licence). "
-        "Download the GADM 4.1 levels ZIP from https://gadm.org/ or run `python -m code.climate.fetch_supplementary_inputs`, "
-        "then extract gadm_410-levels.gpkg to `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`."
+        "Download gadm_410-levels.gpkg from https://gadm.org/ (or run `python -m code.climate.fetch_supplementary_inputs`) "
+        "and place it at `data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg`."
     )
 
 
