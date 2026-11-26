@@ -1,9 +1,9 @@
-# Climate warming undermines waste heat for urban heating decarbonization
+# Warming erodes the value of waste heat for decarbonizing urban heating
 
 **Authors:** Hongdi Fu & Haoran Zhang (Peking University)  
 **Version:** 1.0.0
 
-This repository provides the modelling, optimization, climate-experiment and figure-generation code for the study *"Climate warming undermines waste heat for urban heating decarbonization"*.
+This repository provides the modelling, optimization, climate-experiment and figure-generation code for the study *"Warming erodes the value of waste heat for decarbonizing urban heating"*.
 
 ---
 
@@ -30,7 +30,7 @@ The modelling framework links 27,481 geolocated power, heavy industrial and muni
 
 ## Installation
 
-Python 3.11+ (tested with Python 3.13) and the open-source [HiGHS](https://highs.dev/) optimization solver (`highspy >= 1.8`) are required.
+Python 3.11+ (tested with Python 3.13) and the open-source [HiGHS](https://highs.dev/) optimization solver (`highspy >= 1.8`) are required. If rerunning upstream PDF benchmark parsing (`validate_sources_2025.py`), install `poppler-utils` (`pdftotext`) on the system `PATH`.
 
 ```bash
 python3 -m venv env
@@ -54,11 +54,19 @@ pip install -r requirements.txt
    python code/figures/build_extended_figures.py
    python code/figures/build_si_figures_and_tables.py
    ```
-4. To rerun the upstream data preparation and all 190 global scenario simulations from primary inputs:
+4. To rerun the upstream data preparation and all 202 global scenario simulations from primary inputs in dependency order:
    ```bash
+   python -m code.climate.fetch_supplementary_inputs
+   python -m code.climate.complete_bait_and_alignment
    python -m code.sources.build_sources_2025
+   python -m code.sources.validate_sources_2025
+   python -m code.sinks.aggregate_ghsl_to_climate_cells
    python -m code.sinks.calibrate_demand_and_prices
    python -m code.sinks.build_urban_heat_zones
-   python -m code.climate.complete_bait_and_alignment
+   python -m code.sinks.build_urban_heat_zones --ghsl-epoch 2020
+   python -m code.sinks.calibrate_demand_and_prices --fast-update
    python -m code.scenarios.run_global_scenarios
+   python -m code.scenarios.run_counterfactuals_and_planning
+   python -m code.scenarios.validate_matching_benchmarks
+   python -m code.matching.validate_milp_3countries
    ```

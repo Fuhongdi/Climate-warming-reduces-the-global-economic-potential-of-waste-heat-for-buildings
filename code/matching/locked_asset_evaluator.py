@@ -41,7 +41,10 @@ def evaluate_locked_portfolio(
   a_dist = crf(discount_rate, 40.0)
   a_sub = crf(discount_rate, DH_SUBSTATION_2025.lifetime_yr)
 
-  q_rem = {sid: arr.copy() for sid, arr in q_init_m_gj_d.items()}
+  q_rem = {
+      sid: (arr.reshape(12, 30).copy() if arr.size == 360 else np.broadcast_to(arr.reshape(12)[:, None], (12, 30)).copy())
+      for sid, arr in q_init_m_gj_d.items()
+  }
   out_rows = []
 
   for r in df_locked_links.itertuples(index=False):
@@ -94,16 +97,16 @@ def evaluate_locked_portfolio(
         + a_pk * pk_cap_usd + pk_fom_usd
     )
 
-    # Future daily dispatch on locked capacity (c_mw, alpha)
+    # Future daily dispatch on locked capacity (c_mw, alpha) across all 360 (month, quantile) states
     c_d_gj = c_mw * GJ_PER_MW_DAY
-    src_avail_d = (kappa * eta_tot * q_rem[sid])[:, None]
+    src_avail_mq = kappa * eta_tot * q_rem[sid]
     sub_dmq_f = alpha * dmq_f
-    h_mq_f = np.minimum(c_d_gj, np.minimum(src_avail_d, sub_dmq_f))
+    h_mq_f = np.minimum(c_d_gj, np.minimum(src_avail_mq, sub_dmq_f))
     H_deliv_f_gj = float(np.sum(h_mq_f * w_mq))
 
-    # Update remaining source waste heat for subsequent locked links sharing source sid
-    q_used_m = np.mean(h_mq_f, axis=1) / max(1e-9, kappa * eta_tot)
-    q_rem[sid] = np.maximum(0.0, q_rem[sid] - q_used_m)
+    # Update remaining source waste heat across all 360 states for subsequent locked links sharing source sid
+    q_used_mq = h_mq_f / max(1e-9, kappa * eta_tot)
+    q_rem[sid] = np.maximum(0.0, q_rem[sid] - q_used_mq)
 
     sub_D_f_gj = alpha * float(zm_f["ann_gj"])
     H_src_f_mwh = (H_deliv_f_gj / max(1e-9, eta_tot)) / GJ_PER_MWH
@@ -131,7 +134,14 @@ def evaluate_locked_portfolio(
     avoided_ind_f_usd = sub_D_f_gj * float(zm_f["c_ind_usd_per_gj"])
     net_benefit_f_usd = avoided_ind_f_usd - tot_dh_cost_f_usd
 
+    # Ongoing operating cashflow excluding sunk capital recovery charges
+    dist_sub_fom_el_0 = alpha * float(zm_0.get("dist_sub_fom_el_usd_full", 0.0))
+    ongoing_cash_cost_f_usd = dist_sub_fom_el_0 + pipe_fom_usd + eq_fom_usd + pk_fom_usd + var_cost_f_usd
+    operating_margin_excl_sunk_f_usd = avoided_ind_f_usd - ongoing_cash_cost_f_usd
+
     sub_D_0_gj = float(r.sub_demand_gj_yr)
+    c_ind_0_usd_gj = float(zm_0["c_ind_usd_per_gj"])
+    c_ind_f_usd_gj = float(zm_f["c_ind_usd_per_gj"])
     lcoh_0_usd_gj = float(r.tot_dh_cost_usd_yr) / max(1.0, sub_D_0_gj)
     lcoh_f_usd_gj = tot_dh_cost_f_usd / max(1.0, sub_D_f_gj)
 
@@ -152,12 +162,16 @@ def evaluate_locked_portfolio(
         "sub_D_fut_gj_yr": sub_D_f_gj,
         "P_0_gj_yr": float(r.P_net_waste_heat_gj_yr),
         "P_fut_gj_yr": H_deliv_f_gj / kappa,
+        "c_ind_0_usd_per_gj": c_ind_0_usd_gj,
+        "c_ind_fut_usd_per_gj": c_ind_f_usd_gj,
         "lcoh_0_usd_per_gj": lcoh_0_usd_gj,
         "lcoh_fut_usd_per_gj": lcoh_f_usd_gj,
         "delta_lcoh_usd_per_gj": lcoh_f_usd_gj - lcoh_0_usd_gj,
         "net_benefit_0_usd_yr": float(r.net_benefit_usd_yr),
         "net_benefit_fut_usd_yr": net_benefit_f_usd,
+        "operating_margin_excl_sunk_fut_usd_yr": operating_margin_excl_sunk_f_usd,
         "is_loss_making_fut": bool(net_benefit_f_usd < 0.0),
+        "is_operating_loss_fut": bool(operating_margin_excl_sunk_f_usd < 0.0),
         "co2_abated_0_t_yr": co2_abated_0_t,
         "co2_abated_fut_t_yr": co2_abated_f_t,
         "foregone_co2_abatement_t_yr": co2_abated_0_t - co2_abated_f_t,

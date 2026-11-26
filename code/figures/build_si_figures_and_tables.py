@@ -39,7 +39,6 @@ from code.common.parameters import (  # noqa: E402
     INDIV_ASHP_2025,
     INDIV_ASHP_2050,
     INDIV_GAS_BOILER_2025,
-    INDIV_GAS_BOILER_2050,
     PEAKING_ELEC_BOILER_2025,
     PEAKING_ELEC_BOILER_2050,
     PEAKING_GAS_BOILER_2025,
@@ -135,10 +134,12 @@ def build_supp_fig_1() -> dict:
         ax_m.plot(gx, gy, color="#D8E0E8", lw=0.30, zorder=0.4)
     gdf_rob.plot(ax=ax_m, facecolor="#F3F5F8", edgecolor="#8A96A3", linewidth=0.24, zorder=1)
 
-    fac = df_s.groupby(["facility_id", "sector"], as_index=False).agg(
+    df_s_cat = df_s.copy()
+    df_s_cat["cat"] = np.where(df_s_cat["sector"] == "power", "Power plants", np.where(df_s_cat["sector"] == "wastewater", "Wastewater", "Heavy industry"))
+    fac = df_s_cat.groupby(["facility_id", "cat"], as_index=False).agg(
         lat=("lat", "first"), lon=("lon", "first"), q_gj=("q3g_annual_gj", "sum")
-    )
-    fac["cat"] = np.where(fac["sector"] == "power", "Power plants", np.where(fac["sector"] == "wastewater", "Wastewater", "Heavy industry"))
+    ).sort_values("q_gj", ascending=False).drop_duplicates("facility_id")
+    assert len(fac) == df_s["facility_id"].nunique(), f"Facility count mismatch: {len(fac)} vs {df_s['facility_id'].nunique()}"
     for cat_name, col_hex, z_o, al in [
         ("Wastewater", COL_EMERALD, 2.2, 0.52),
         ("Power plants", COL_SAPPHIRE, 2.8, 0.62),
@@ -258,6 +259,8 @@ def build_supp_fig_2(df_glob: pd.DataFrame) -> dict:
     ax_a.scatter(np.zeros(len(g_al)), ya, s=24, marker="D", color=COL_SAPPHIRE, edgecolors="white", linewidths=0.35, zorder=5, label="Aligned (<10$^{-6}$ °C)")
     ax_a.set_yticks(ya)
     ax_a.set_yticklabels([GCM_LABELS[m] for m in g_al["gcm"]], fontsize=FS_UNIFIED)
+    ax_a.set_xticks([-2, -1, 0, 1, 2])
+    ax_a.set_xticklabels([f"{MINUS}2", f"{MINUS}1", "0", "1", "2"])
     ax_a.set_xlabel("2006–2025 BAIT offset (°C)")
     ax_a.legend(loc="lower center", bbox_to_anchor=(0.48, 1.01), ncol=1, frameon=False, fontsize=FS_COMPACT, labelspacing=0.16)
 
@@ -277,7 +280,7 @@ def build_supp_fig_2(df_glob: pd.DataFrame) -> dict:
         grp = sub.groupby("mid_year", as_index=False).agg(m=("D_urban_ej_yr", "mean"), lo=("D_urban_ej_yr", "min"), hi=("D_urban_ej_yr", "max"))
         ax_b.fill_between(grp["mid_year"], grp["lo"], grp["hi"], color=scol, alpha=0.16, lw=0, zorder=2)
         ax_b.plot(grp["mid_year"], grp["m"], color=scol, lw=1.55, marker=mk, ms=3.4, markeredgecolor="white", markeredgewidth=0.35, zorder=4, label=lbl_s)
-    ax_b.set_xlabel("20 year climate window midpoint")
+    ax_b.set_xlabel("20-year climate window midpoint")
     ax_b.set_ylabel("Urban heating area demand (EJ yr$^{-1}$)")
     ax_b.legend(loc="lower left", frameon=False, fontsize=FS_COMPACT, labelspacing=0.18)
 
@@ -307,11 +310,11 @@ def build_supp_fig_3() -> dict:
     s_ng = np.clip(np.sqrt(no_g["baseline_total_demand_gj_yr"].to_numpy() / 1e6) * 1.35, 8.0, 72.0)
 
     ax_a.scatter(has_g["p_gas_pretax_usd_per_gj"], has_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_g, color=COL_SAPPHIRE, alpha=0.70, edgecolors="white", linewidths=0.35, zorder=3, label="Gas grid regions")
-    ax_a.scatter(np.zeros(len(no_g)) + 1.2, no_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_ng, marker="^", color=COL_APRICOT, alpha=0.90, edgecolors="#333333", linewidths=0.30, zorder=3.5, label="Non-gas regions")
+    ax_a.scatter(np.zeros(len(no_g)), no_g["p_elec_pretax_usd_per_mwh"] / 3.6, s=s_ng, marker="^", color=COL_APRICOT, alpha=0.90, edgecolors="#333333", linewidths=0.30, zorder=3.5, label="Non-gas regions (at x = 0)")
 
     gx = np.linspace(0.5, 40.0, 120)
-    ax_a.plot(gx, gx * (2.99 / 1.01), color="#000000", ls="--", lw=0.75, zorder=2, label="2025 parity (SCOP 2.99)")
-    ax_a.plot(gx, gx * (4.29 / 1.02), color=COL_CORAL, ls=":", lw=0.90, zorder=2.2, label="2050 parity (SCOP 4.29)")
+    ax_a.plot(gx, gx * (2.99 / 1.01), color="#000000", ls="--", lw=0.75, zorder=2, label="2025 parity (COP 3.0)")
+    ax_a.plot(gx, gx * (4.29 / 1.01), color=COL_CORAL, ls=":", lw=0.90, zorder=2.2, label="2050 parity (COP 4.3)")
 
     for iso_code, txt_l, (xt_p, yt_p), ha_p in [
         ("USA", "United States", (7.8, 52.0), "right"),
@@ -325,13 +328,13 @@ def build_supp_fig_3() -> dict:
         sub = rp[rp["iso3"] == iso_code].sort_values("baseline_total_demand_gj_yr", ascending=False).head(1)
         if not sub.empty:
             r0 = sub.iloc[0]
-            xv = float(r0["p_gas_pretax_usd_per_gj"]) if bool(r0["has_gas"]) else 1.2
+            xv = float(r0["p_gas_pretax_usd_per_gj"]) if bool(r0["has_gas"]) else 0.0
             yv = float(r0["p_elec_pretax_usd_per_mwh"]) / 3.6
             xe = xt_p + (0.45 if ha_p == "right" else -0.45)
             ax_a.plot([xv, xe], [yv, yt_p], color="#000000", lw=0.45, zorder=4.5)
             ax_a.text(xt_p, yt_p, txt_l, ha=ha_p, va="center", fontsize=FS_COMPACT, color="#000000", zorder=5)
 
-    ax_a.set_xlim(0.0, 42.0)
+    ax_a.set_xlim(-1.8, 42.0)
     ax_a.set_ylim(0.0, 122.0)
     ax_a.set_xlabel("2025 untaxed natural gas price (USD GJ$^{-1}$)")
     ax_a.set_ylabel("2025 untaxed electricity price\n(USD GJ$^{-1}$)")
@@ -346,10 +349,10 @@ def build_supp_fig_3() -> dict:
     for yi, r_e in ef_df.iterrows():
         ax_b.plot([r_e["grid_ef_2050_tco2_per_mwh"] * 1000, r_e["grid_ef_2025_tco2_per_mwh"] * 1000], [yi, yi], color="#8E9FB1", lw=1.25, zorder=2)
     ax_b.scatter(ef_df["grid_ef_2025_tco2_per_mwh"] * 1000, yb, s=24, color=COL_SAPPHIRE, edgecolors="white", linewidths=0.35, zorder=4, label="2025 grid")
-    ax_b.scatter(ef_df["grid_ef_2050_tco2_per_mwh"] * 1000, yb, s=24, marker="D", color=COL_EMERALD, edgecolors="white", linewidths=0.35, zorder=5, label="2050 Net Zero grid")
+    ax_b.scatter(ef_df["grid_ef_2050_tco2_per_mwh"] * 1000, yb, s=24, marker="D", color=COL_EMERALD, edgecolors="white", linewidths=0.35, zorder=5, label="2050 decarbonized grid")
     ax_b.set_yticks(yb)
     ax_b.set_yticklabels(["UK" if c == "GBR" else cname(c) for c in ef_df["iso3"]], fontsize=FS_COMPACT)
-    ax_b.set_xlabel("Grid carbon intensity (gCO$_2$ kWh$^{-1}$)")
+    ax_b.set_xlabel("Grid carbon intensity (g CO$_2$ kWh$^{-1}$)")
     ax_b.legend(loc="lower right", frameon=False, fontsize=FS_COMPACT, labelspacing=0.18)
 
     panel_tag(fig, 0.015, 0.968, "a")
@@ -372,6 +375,10 @@ def build_supp_fig_4(df_glob: pd.DataFrame) -> dict:
     r1 = df_glob[(df_glob["group"] == "R1") & (df_glob["ssp"] != "obsclim")].copy()
     r1["mid_year"] = 0.5 * (r1["start_year"] + r1["end_year"])
 
+    p0_obs_sf4 = float(df_glob.loc[df_glob["scenario_id"] == "R1__obs__2006_2025", "P_ej_yr"].iloc[0])
+    ymin_sf4 = max(0.80, float(r1["P_ej_yr"].min()) - 0.15)
+    ymax_sf4 = max(3.15, float(r1["P_ej_yr"].max()) + 0.18, p0_obs_sf4 + 0.18)
+
     for idx_m, (m_code, m_lbl, _) in enumerate(GCM_ORDER):
         ax = fig.add_subplot(gs_top[0, idx_m])
         clean_ax(ax, "y")
@@ -379,8 +386,8 @@ def build_supp_fig_4(df_glob: pd.DataFrame) -> dict:
         for ssp_c, lbl_s, scol in [("ssp126", "SSP1-2.6", COL_SAPPHIRE), ("ssp245", "SSP2-4.5", COL_SSP2), ("ssp370", "SSP3-7.0", COL_CORAL)]:
             s_df = sub_m[sub_m["ssp"] == ssp_c].sort_values("mid_year")
             ax.plot(s_df["mid_year"], s_df["P_ej_yr"], color=scol, lw=1.35, marker="o", ms=2.4, label=lbl_s if idx_m == 0 else None)
-        ax.axhline(3.05, color="#333333", ls=":", lw=0.60, zorder=2)
-        ax.set_ylim(1.50, 3.35)
+        ax.axhline(p0_obs_sf4, color="#333333", ls=":", lw=0.60, zorder=2)
+        ax.set_ylim(ymin_sf4, ymax_sf4)
         ax.set_xlim(2010, 2096)
         ax.set_xticks([2015, 2055, 2090])
         ax.set_xticklabels(["2015", "2055", "2090"], fontsize=FS_COMPACT)
@@ -453,8 +460,8 @@ def build_supp_fig_5() -> dict:
     p_cdf = 100.0 * np.cumsum(p_w) / float(p_w.sum())
     n_cdf = 100.0 * np.arange(1, len(ell_s) + 1) / len(ell_s)
 
-    ax_a.plot(c_bins[1:], c_cdf, color=COL_BLDG_SLATE, ls="--", lw=1.25, label="Candidate connections ($n$ = 2.49M)")
-    ax_a.plot(ell_s, n_cdf, color=COL_SKY_CYAN, lw=1.50, label="Selected networks ($n$ = 5,327)")
+    ax_a.plot(c_bins[1:], c_cdf, color=COL_BLDG_SLATE, ls="--", lw=1.25, label=f"Candidate connections ($n$ = {len(cand)/1e6:.2f}M)")
+    ax_a.plot(ell_s, n_cdf, color=COL_SKY_CYAN, lw=1.50, label=f"Selected networks ($n$ = {len(lk):,})")
     ax_a.plot(ell_s, p_cdf, color=COL_SAPPHIRE, lw=1.75, label="Economic potential $P_0$ share")
     ax_a.axvline(50.0, color="#000000", ls=":", lw=0.75)
     p50 = float(p_w[ell_s <= 50.0].sum() / p_w.sum() * 100.0)
@@ -607,7 +614,8 @@ def build_supp_fig_6() -> dict:
     ax_b.axhline(2.5, color="#444444", ls="--", lw=0.50, zorder=10)
     ax_b.set_yticks(yb)
     ax_b.set_yticklabels([r["lbl"] for r in st_list], fontsize=FS_COMPACT)
-    ax_b.set_xlim(-82.0, 16.0)
+    min_lo_6b = min(float(r["lo"]) for r in st_list)
+    ax_b.set_xlim(min(-86.0, min_lo_6b - 4.0), 16.0)
     ax_b.set_xticks([-80, -60, -40, -20, 0, 15])
     ax_b.set_xticklabels([f"{MINUS}80", f"{MINUS}60", f"{MINUS}40", f"{MINUS}20", "0", "+15"])
     ax_b.set_xlabel("Stratified 2081–2100 change (%)")
@@ -629,7 +637,9 @@ def build_supp_fig_7() -> dict:
     r3_dir = SCEN_DIR / "r3_locked_assets"
     df_r3 = pd.read_csv(r3_dir / "r3_locked_assets_summary.csv")
     link_dfs = [pd.read_parquet(p) for p in sorted(r3_dir.glob("R3__*__ssp245__2046_2065_links.parquet"))]
-    df_lk = pd.concat(link_dfs, ignore_index=True).groupby(["stream_id", "zone_id"], as_index=False).agg(
+    df_mid_all = pd.concat(link_dfs, ignore_index=True)
+    df_mid_all["m0"] = df_mid_all["net_benefit_0_usd_yr"] / np.maximum(1.0, df_mid_all["sub_D_0_gj_yr"])
+    df_lk = df_mid_all.groupby(["stream_id", "zone_id"], as_index=False).agg(
         cap=("total_sunk_capex_usd", "first"),
         d0=("sub_D_0_gj_yr", "first"),
         n0=("net_benefit_0_usd_yr", "first"),
@@ -641,35 +651,35 @@ def build_supp_fig_7() -> dict:
 
     gs = gridspec.GridSpec(1, 3, figure=fig, width_ratios=[1.06, 1.02, 1.02], left=0.148, right=0.980, bottom=0.165, top=0.905, wspace=0.36)
 
-    # Panel a: Horizontal Lollipop Plot of Model-Specific Stranded Capital & Network Counts (ZERO Bars!)
+    # Panel a: Horizontal Lollipop Plot of Model-Specific Exposed Capital & Network Counts (ZERO Bars!)
     ax_a = fig.add_subplot(gs[0, 0])
     clean_ax(ax_a, "x")
-    cnt_col = "loss_making_links" if "loss_making_links" in df_r3.columns else [c for c in df_r3.columns if "loss" in c and "capex" not in c][0]
+    cnt_col = "n_loss_making_links" if "n_loss_making_links" in df_r3.columns else [c for c in df_r3.columns if "loss" in c and "capex" not in c][0]
     sub2055 = df_r3[df_r3["window_id"] == "2046_2065"].sort_values("loss_making_capex_billion_usd", ascending=False).reset_index(drop=True)
     ya = np.arange(len(sub2055))
+    xmax_sf7 = max(32.0, float(sub2055["loss_making_capex_billion_usd"].max()) * 1.48)
     for yi, r in sub2055.iterrows():
         v_cap = float(r["loss_making_capex_billion_usd"])
         n_cnt = int(round(float(r[cnt_col])))
         ax_a.plot([0.0, v_cap], [yi, yi], color=COL_CORAL, lw=1.45, zorder=3)
         ax_a.scatter([v_cap], [yi], s=34, color=COL_CORAL, edgecolors="white", linewidths=0.40, zorder=4)
-        ax_a.text(v_cap + 2.0, yi, f"{v_cap:.1f} ({n_cnt:,})", va="center", ha="left", fontsize=FS_COMPACT)
+        ax_a.text(v_cap + 0.03 * xmax_sf7, yi, f"{v_cap:.1f} ({n_cnt:,})", va="center", ha="left", fontsize=FS_COMPACT)
 
     ax_a.set_yticks(ya)
     ax_a.set_yticklabels([GCM_LABELS.get(str(m), str(m)) for m in sub2055["model"]], fontsize=FS_COMPACT)
-    ax_a.set_xlim(0.0, 92.0)
-    ax_a.set_xticks([0, 25, 50, 75])
+    ax_a.set_xlim(0.0, xmax_sf7)
     ax_a.set_xlabel("2046–2065 exposed capital\n(billion USD, networks)")
 
     # Panel b: Initial Cost-Saving Margin Screening Trade-off Curve
     ax_b = fig.add_subplot(gs[0, 1])
     clean_ax(ax_b, "y")
     cuts = np.linspace(0.0, 6.0, 61)
-    tot_str_cap = float(df_lk.loc[df_lk["str"], "cap"].sum())
+    tot_str_cap = float(df_mid_all.loc[df_mid_all["is_loss_making_fut"], "total_sunk_capex_usd"].sum())
     tot_p0 = float(df_lk["p0"].sum())
-    avoided_str = [100.0 * float(df_lk.loc[df_lk["str"] & (df_lk["m0"] < c), "cap"].sum()) / max(1.0, tot_str_cap) for c in cuts]
+    avoided_str = [100.0 * float(df_mid_all.loc[df_mid_all["is_loss_making_fut"] & (df_mid_all["m0"] < c), "total_sunk_capex_usd"].sum()) / max(1.0, tot_str_cap) for c in cuts]
     kept_p0 = [100.0 * float(df_lk.loc[df_lk["m0"] >= c, "p0"].sum()) / max(1.0, tot_p0) for c in cuts]
 
-    av_3 = 100.0 * float(df_lk.loc[df_lk["str"] & (df_lk["m0"] < 3.0), "cap"].sum()) / max(1.0, tot_str_cap)
+    av_3 = 100.0 * float(df_mid_all.loc[df_mid_all["is_loss_making_fut"] & (df_mid_all["m0"] < 3.0), "total_sunk_capex_usd"].sum()) / max(1.0, tot_str_cap)
     kp_3 = 100.0 * float(df_lk.loc[df_lk["m0"] >= 3.0, "p0"].sum()) / max(1.0, tot_p0)
 
     ax_b.plot(cuts, avoided_str, color=COL_CORAL, lw=1.65, label="Exposed capital avoided")
@@ -704,9 +714,10 @@ def build_supp_fig_7() -> dict:
     ax_c.scatter([0.70], [dc70], s=26, marker="D", color=COL_SAPPHIRE, edgecolors="white", linewidths=0.40, zorder=5)
     ax_c.text(0.71, dc70 + 1.2, f"{dc70:.1f} USD GJ$^{{-1}}$", ha="left", va="bottom", fontsize=FS_COMPACT)
 
-    # Margin ceiling = 18.58 (ASHP benchmark) - 14.01 (network LCOH) = 4.57 USD GJ^-1
-    ax_c.axhline(4.57, color="#000000", ls=":", lw=0.75)
-    ax_c.text(0.56, 5.4, "Break-even margin (4.6)", ha="left", va="bottom", fontsize=FS_COMPACT)
+    # Dynamic 2046-2065 portfolio cost margin ceiling
+    fut_marg = float(sub2055["future_margin_fut_usd_per_gj"].mean()) if "future_margin_fut_usd_per_gj" in sub2055.columns else 4.5
+    ax_c.axhline(fut_marg, color="#000000", ls=":", lw=0.75)
+    ax_c.text(0.56, fut_marg + 0.8, f"2046–2065 margin ({fut_marg:.1f})", ha="left", va="bottom", fontsize=FS_COMPACT)
 
     ax_c.set_xlim(0.55, 0.85)
     ax_c.set_ylim(0.0, 42.0)
@@ -729,7 +740,12 @@ def build_supp_fig_8(df_country: pd.DataFrame) -> dict:
     H_MM = 138.0
     fig = plt.figure(figsize=(W_IN, H_MM * MM))
 
-    lk0 = pd.read_parquet(SCEN_DIR / "R1__obs__2006_2025_selected_links.parquet")
+    s5_links_pq = SCEN_DIR / "R4__S5_combined_all_2046_2065_selected_links_ensmean.parquet"
+    if s5_links_pq.exists():
+        nf_lk_base = pd.read_parquet(s5_links_pq)
+    else:
+        nf_lk_base = pd.read_parquet(SCEN_DIR / "R1__obs__2006_2025_selected_links.parquet")
+        nf_lk_base = nf_lk_base[~nf_lk_base["is_fossil_power"]].copy()
     df_zm = pd.read_parquet(DATA_PROC / "sinks_2025/urban_heat_zones.parquet")[["zone_id", "lat", "lon"]]
     gdf_rob, trans, px, py = _robinson_base()
 
@@ -742,8 +758,9 @@ def build_supp_fig_8(df_country: pd.DataFrame) -> dict:
         ax_m.plot(gx, gy, color="#D8E0E8", lw=0.30, zorder=0.4)
     gdf_rob.plot(ax=ax_m, facecolor="#F3F5F8", edgecolor="#8A96A3", linewidth=0.24, zorder=1)
 
-    nf_lk = lk0[~lk0["is_fossil_power"]].merge(df_zm, on="zone_id", how="left")
+    nf_lk = nf_lk_base.merge(df_zm, on="zone_id", how="left")
     nf_lk["grp"] = np.where(nf_lk["sector"] == "power", "Nuclear and bioenergy", "Heavy industry and wastewater")
+    print(f"  [SI8A INFO] Plotting {len(nf_lk)} S5 non-fossil connections ({nf_lk['P_net_waste_heat_gj_yr'].sum()/1e6:.2f} PJ/yr)")
     for g_lbl, col_h, zo in [("Heavy industry and wastewater", F5_STEEL, 3.2), ("Nuclear and bioenergy", F5_POWER, 3.6)]:
         sub = nf_lk[nf_lk["grp"] == g_lbl]
         xz, yz = trans.transform(sub["lon"].to_numpy(), sub["lat"].to_numpy())
@@ -757,7 +774,7 @@ def build_supp_fig_8(df_country: pd.DataFrame) -> dict:
     ax_m.set_xlabel("")
     ax_m.set_ylabel("")
     ax_m.axis("off")
-    leg_m = ax_m.legend(loc="lower left", bbox_to_anchor=(0.065, 0.075), frameon=True, facecolor="white", framealpha=0.90, edgecolor="none", fontsize=FS_COMPACT, markerscale=0.72, handletextpad=0.3, labelspacing=0.20)
+    leg_m = ax_m.legend(loc="lower left", bbox_to_anchor=(0.065, 0.075), frameon=True, facecolor="white", framealpha=1.0, edgecolor="none", fontsize=FS_COMPACT, markerscale=0.72, handletextpad=0.3, labelspacing=0.20)
     leg_m.set_zorder(6)
 
     clean_ax(ax_b, "x")
@@ -794,7 +811,7 @@ def build_supp_fig_8(df_country: pd.DataFrame) -> dict:
 
     ax_b.set_yticks(yb)
     ax_b.set_yticklabels(["UK" if c == "GBR" else cname(c) for c in s5["iso3"]], fontsize=FS_COMPACT)
-    ax_b.set_xlim(0.0, 104.0)
+    ax_b.set_xlim(0.0, max(75.0, float(hi_pj.max()) * 1.18))
     ax_b.set_xlabel("2046–2065 combined 2050 economic potential (PJ yr$^{-1}$)")
     ax_b.legend(loc="lower right", frameon=False, fontsize=FS_COMPACT, ncol=2, columnspacing=0.8, labelspacing=0.18, handlelength=0.95)
     lock_spines_above_data(ax_b)
@@ -829,24 +846,36 @@ def export_verified_tables_json(out_json: Path) -> dict:
 
     ed_table_1 = [
         ["Direct heat exchange station (≥95 °C or ≥55 °C)", "Upgrade ratio κ = 1.00", f"{SOURCE_HEX_STATION_CAPEX_EUR_PER_MW * u_fx / 1e3:.1f}", f"{SOURCE_HEX_STATION_CAPEX_EUR_PER_MW * u_fx / 1e3:.1f}", "1.0% CAPEX yr⁻¹", f"{int(STATION_LIFETIME_YR)}", "DEA Gen. and DH"],
+        ["Source transmission pumping station", "1.0% of transmitted heat as pumping electricity", "144.0", "144.0", "1.0% CAPEX yr⁻¹", f"{int(STATION_LIFETIME_YR)}", "DEA Energy Transport 3.1"],
         ["Source electric heat pump (power and industry)", f"COP = {HP_INDUSTRIAL_POWER_2025.cop:.2f} → {HP_INDUSTRIAL_POWER_2050.cop:.2f}", f"{HP_INDUSTRIAL_POWER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{HP_INDUSTRIAL_POWER_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{HP_INDUSTRIAL_POWER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ + {HP_INDUSTRIAL_POWER_2025.var_om_eur_per_mwh_h * u_fx:.2f} USD MWh⁻¹", f"{int(HP_INDUSTRIAL_POWER_2025.lifetime_yr)}", "DEA Sheet 40 (10 MW)"],
         ["Source electric heat pump (wastewater, ΔT = 5 K)", f"COP = {HP_WASTEWATER_2025.cop:.2f} → {HP_WASTEWATER_2050.cop:.2f}", f"{HP_WASTEWATER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{HP_WASTEWATER_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{HP_WASTEWATER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ + {HP_WASTEWATER_2025.var_om_eur_per_mwh_h * u_fx:.2f} USD MWh⁻¹", f"{int(HP_WASTEWATER_2025.lifetime_yr)}", "DEA Sheet 40 (1 MW)"],
-        ["Insulated transmission mains (70/40 °C)", "Loss 1.0 / 0.25 / 0.10% km⁻¹ and 1% pump power", "421.4 × C⁰·⁴²⁹ kUSD km⁻¹", "400.3 × C⁰·⁴²⁹ kUSD km⁻¹ (55 °C)", "113 USD MW⁻¹ km⁻¹ yr⁻¹", f"{int(PIPE_LIFETIME_YR)}", "DEA Energy Transport 3.1"],
-        ["Urban distribution pipes and substation", "Plot ratio density curve and η = 1.00", "Area plot ratio + 83.0", "−5% pipes + 76.2", "0.39 → 0.34 kUSD MW⁻¹ yr⁻¹", "40 / 25", "Persson et al. (2019), DEA 203"],
+        ["Insulated transmission mains (70/40 °C)", "Loss 1.0 / 0.25 / 0.10% km⁻¹ and 1% pumping electricity", "421.4 × C⁰·⁴²⁹ kUSD km⁻¹", "400.3 × C⁰·⁴²⁹ kUSD km⁻¹ (55 °C)", "113 USD MW⁻¹ km⁻¹ yr⁻¹", f"{int(PIPE_LIFETIME_YR)}", "DEA Energy Transport 3.1"],
+        ["Urban distribution pipes and substation", "Plot-ratio density curve and η = 1.00", "Area plot ratio + 83.0", "−5% pipes + 76.2", "0.39 → 0.34 kUSD MW⁻¹ yr⁻¹", "40 / 25", "DEA Sheet 203"],
         ["Centralized gas peaking boiler", f"η (LHV) = {PEAKING_GAS_BOILER_2025.efficiency_lhv:.2f} → {PEAKING_GAS_BOILER_2050.efficiency_lhv:.2f}", f"{PEAKING_GAS_BOILER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{PEAKING_GAS_BOILER_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{PEAKING_GAS_BOILER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", f"{int(PEAKING_GAS_BOILER_2025.lifetime_yr)}", "DEA Sheet 44"],
         ["Centralized electric peaking boiler", f"η = {PEAKING_ELEC_BOILER_2025.efficiency_lhv:.2f} → {PEAKING_ELEC_BOILER_2050.efficiency_lhv:.2f}", f"{PEAKING_ELEC_BOILER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{PEAKING_ELEC_BOILER_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{PEAKING_ELEC_BOILER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", "20 → 25", "DEA Sheet 41"],
-        ["Building gas boiler", f"η (LHV) = {INDIV_GAS_BOILER_2025.efficiency_or_scop_ref:.2f} → {INDIV_GAS_BOILER_2050.efficiency_or_scop_ref:.2f}", f"{INDIV_GAS_BOILER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_GAS_BOILER_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_GAS_BOILER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} → {INDIV_GAS_BOILER_2050.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", f"{int(INDIV_GAS_BOILER_2025.lifetime_yr)}", "DEA Sheet 202"],
-        ["Building air source heat pump", f"SCOP = {INDIV_ASHP_2025.efficiency_or_scop_ref:.2f} → {INDIV_ASHP_2050.efficiency_or_scop_ref:.2f}", f"{INDIV_ASHP_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_ASHP_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_ASHP_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} → {INDIV_ASHP_2050.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", f"{int(INDIV_ASHP_2025.lifetime_yr)}", "DEA Sheet 207, Brudermueller et al. (2025)"],
+        ["Building gas boiler", f"η (LHV) = {INDIV_GAS_BOILER_2025.efficiency_or_scop_ref:.2f} (fixed)", f"{INDIV_GAS_BOILER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_GAS_BOILER_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_GAS_BOILER_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", f"{int(INDIV_GAS_BOILER_2025.lifetime_yr)}", "DEA Sheet 202"],
+        ["Building air-source heat pump", "Field COP(T_out) (×1.436 in 2050)", f"{INDIV_ASHP_2025.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_ASHP_2050.capex_eur_per_mw_h * u_fx / 1e3:.1f}", f"{INDIV_ASHP_2025.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} → {INDIV_ASHP_2050.fixed_om_eur_per_mw_h_yr * u_fx / 1e3:.2f} kUSD MW⁻¹ yr⁻¹", f"{int(INDIV_ASHP_2025.lifetime_yr)}", "DEA Sheet 207"],
     ]
 
     p0_ref = float(df_g.loc[df_g["scenario_id"] == "R1__obs__2006_2025", "P_ej_yr"].iloc[0])
+    mod_base_map = {}
+    for _, br in df_g[(df_g["group"] == "R1") & (df_g["window_id"] == "2006_2025") & (df_g["model"] != "obs")].iterrows():
+        mod_base_map[(str(br["model"]), str(br["ssp"]))] = float(br["P_ej_yr"])
+        mod_base_map[(str(br["model"]), "any")] = float(br["P_ej_yr"])
 
-    def _fmt_g(sub_df: pd.DataFrame, name_s: str, boundary_s: str, p_base_val: float = p0_ref) -> list[str]:
+    def _fmt_g(sub_df: pd.DataFrame, name_s: str, boundary_s: str, p_base_val: float = p0_ref, aligned_mod_base: bool = False) -> list[str]:
         d_m = float(sub_df["D_total_ej_yr"].mean())
         u_m = float(sub_df["U_ej_yr"].mean())
         p_v = sub_df["P_ej_yr"].to_numpy(dtype=float)
         p_m, p_lo, p_hi = float(p_v.mean()), float(p_v.min()), float(p_v.max())
-        dp_m = 100.0 * (p_m - p_base_val) / max(1e-9, p_base_val)
+        if aligned_mod_base and len(sub_df) > 1:
+            rels = []
+            for _, sr in sub_df.iterrows():
+                pb = mod_base_map.get((str(sr["model"]), str(sr["ssp"])), mod_base_map.get((str(sr["model"]), "any"), p_base_val))
+                rels.append(100.0 * (float(sr["P_ej_yr"]) - pb) / max(1e-9, pb))
+            dp_m = float(np.mean(rels))
+        else:
+            dp_m = 100.0 * (p_m - p_base_val) / max(1e-9, p_base_val)
         nb_m = float(sub_df["net_benefit_billion_usd_yr"].mean())
         co2_m = float(sub_df["co2_abated_mt_yr"].mean())
         p_str = f"{p_m:.2f}" if len(p_v) == 1 else f"{p_m:.2f} ({p_lo:.2f}–{p_hi:.2f})"
@@ -858,15 +887,15 @@ def export_verified_tables_json(out_json: Path) -> dict:
         _fmt_g(df_g[df_g["scenario_id"] == "R1__obs__1966_1985"], "Observed 1966–1985", "Fixed 2025 system, GSWP3-ERA5"),
         _fmt_g(df_g[df_g["scenario_id"] == "R1__obs__1986_2005"], "Observed 1986–2005", "Fixed 2025 system, GSWP3-ERA5"),
         _fmt_g(df_g[df_g["scenario_id"] == "R1__obs__2006_2025"], "Present 2006–2025", "Fixed 2025 system, GSWP3-ERA5"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp126") & (df_g["window_id"] == "2046_2065")], "SSP1-2.6 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp126") & (df_g["window_id"] == "2081_2100")], "SSP1-2.6 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp245") & (df_g["window_id"] == "2046_2065")], "SSP2-4.5 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp245") & (df_g["window_id"] == "2081_2100")], "SSP2-4.5 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp370") & (df_g["window_id"] == "2046_2065")], "SSP3-7.0 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp370") & (df_g["window_id"] == "2081_2100")], "SSP3-7.0 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models"),
-        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_1.5C")], "Global warming 1.5 °C (n = 14)", "20 year global warming level windows"),
-        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_2.0C")], "Global warming 2.0 °C (n = 12)", "20 year global warming level windows"),
-        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_3.0C")], "Global warming 3.0 °C (n = 7)", "20 year global warming level windows"),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp126") & (df_g["window_id"] == "2046_2065")], "SSP1-2.6 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp126") & (df_g["window_id"] == "2081_2100")], "SSP1-2.6 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp245") & (df_g["window_id"] == "2046_2065")], "SSP2-4.5 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp245") & (df_g["window_id"] == "2081_2100")], "SSP2-4.5 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp370") & (df_g["window_id"] == "2046_2065")], "SSP3-7.0 (2046–2065)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "R1") & (df_g["ssp"] == "ssp370") & (df_g["window_id"] == "2081_2100")], "SSP3-7.0 (2081–2100)", "Fixed 2025 system, 5 CMIP6 models", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_1.5C")], "Global warming 1.5 °C (n = 14)", "20 year global warming level windows", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_2.0C")], "Global warming 2.0 °C (n = 12)", "20 year global warming level windows", aligned_mod_base=True),
+        _fmt_g(df_g[(df_g["group"] == "GWL") & (df_g["subgroup"] == "GWL_3.0C")], "Global warming 3.0 °C (n = 7)", "20 year global warming level windows", aligned_mod_base=True),
         _fmt_g(df_g[(df_g["group"] == "R4") & (df_g["subgroup"] == "S3_4gdh_standalone") & (df_g["window_id"] == "2046_2065")], "Low temp. networks (vs 2025)", "55/25 °C networks + 2025 building heat pumps"),
         _fmt_g(df_g[(df_g["group"] == "R4") & (df_g["subgroup"] == "S4_4gdh_symmetric") & (df_g["window_id"] == "2046_2065")], "Low temp. networks (vs 2050)", "55/25 °C networks + 2050 building heat pumps"),
         _fmt_g(df_g[(df_g["group"] == "R4") & (df_g["subgroup"] == "S2_envelope_retrofit") & (df_g["window_id"] == "2046_2065")], "Building envelope retrofits", "2050 space heating conductance cuts"),
@@ -1084,6 +1113,11 @@ def export_verified_tables_json(out_json: Path) -> dict:
             f"{float(rr['co2_2006_2025_mt_yr']):.1f} → {float(rr['co2_2046_2065_mean_mt_yr']):.1f}",
         ])
 
+    cf_json_path = SCEN_DIR / "counterfactual_and_planning_summary.json"
+    cf_payload = json.loads(cf_json_path.read_text(encoding="utf-8")) if cf_json_path.exists() else {}
+    milp_csv_path = DATA_PROC / "validation_4_milp/validation_4_milp_3countries.csv"
+    milp_records = pd.read_csv(milp_csv_path).to_dict("records") if milp_csv_path.exists() else []
+
     payload = {
         "ed_table_1": ed_table_1,
         "ed_table_2": ed_table_2,
@@ -1098,6 +1132,8 @@ def export_verified_tables_json(out_json: Path) -> dict:
         "supp_table_9": supp_table_9,
         "supp_table_10": supp_table_10,
         "r3_global_summary": df_r3_sum.to_dict("records"),
+        "counterfactual_summary": cf_payload,
+        "milp_6countries": milp_records,
     }
 
 
@@ -1170,28 +1206,31 @@ def _style_sheet(ws, df: pd.DataFrame, title: str, add_sum_cols: list[int] | Non
 
 def build_excel_workbooks() -> None:
     MS_DIR.mkdir(parents=True, exist_ok=True)
+    df_g = pd.read_parquet(SCEN_DIR / "global_scenarios_summary.parquet")
+    n_scen = len(df_g)
 
     wb1 = openpyxl.Workbook()
     ws_readme = wb1.active
     ws_readme.title = "README"
     readme_df = pd.DataFrame([
-        ["Global_190_Scenarios", "Global summary across all 190 climate, global warming level, transition and sensitivity runs (1946–2100)"],
+        [f"Global_{n_scen}_Scenarios", f"Global summary across all {n_scen} climate, global warming level, transition and sensitivity runs (1946–2100)"],
         ["Baseline_Countries_2025", "National 2006–2025 recoverable waste heat Q, building demand D, urban area demand, technical U0 and economic P0"],
         ["MidCentury_Decomposition", "National additive decomposition into heating demand, seasonal matching and economic viability (2046–2065 SSP2-4.5)"],
+        ["Locked_Assets_40yr_NPV", "Fixed-network 2026–2045 and 2046–2065 evaluation including 40-year discounted lifetime NPV and operating cashflow"],
+        ["Counterfactuals_Summary", "Within-configuration 2050 warming effects, fixed-COP mechanism split, all 3 CHP accounting conventions and forward planning"],
         ["GWL_Crossings", "Exact 20 year CMIP6 global warming level windows at 1.5, 2.0 and 3.0 °C above 1850–1900"],
-        ["Calibrated_183_Regions", "Calibrated space heating and water heating parameters, energy prices and grid emission intensities across 183 regions"],
+        ["Calibrated_183_Regions", "Calibrated space heating and water heating parameters, non-inverted energy tariffs and grid emission intensities across 183 regions"],
     ], columns=["Worksheet", "Contents and units"])
-    _style_sheet(ws_readme, readme_df, "Supplementary Data 1 | Climate warming undermines waste heat for urban heating decarbonization")
+    _style_sheet(ws_readme, readme_df, "Supplementary Data 1 | Warming erodes the value of waste heat for decarbonizing urban heating")
 
-    df_g = pd.read_parquet(SCEN_DIR / "global_scenarios_summary.parquet")
     keep_g = [
         "scenario_id", "group", "subgroup", "model", "ssp", "window_id", "start_year", "end_year",
         "Q_ej_yr", "D_total_ej_yr", "D_urban_ej_yr", "U_ej_yr", "P_ej_yr",
         "P_power_ej_yr", "P_industry_ej_yr", "P_wastewater_ej_yr",
         "net_benefit_billion_usd_yr", "total_capex_billion_usd", "mean_dh_lcoh_usd_per_gj", "co2_abated_mt_yr", "n_selected_links",
     ]
-    ws_g = wb1.create_sheet("Global_190_Scenarios")
-    _style_sheet(ws_g, df_g[keep_g], "Global Scenario Summary (190 model runs, 1946–2100, constant 2025 USD)")
+    ws_g = wb1.create_sheet(f"Global_{n_scen}_Scenarios")
+    _style_sheet(ws_g, df_g[keep_g], f"Global Scenario Summary ({n_scen} model runs, 1946–2100, constant 2025 USD)")
 
     df_c0 = pd.read_parquet(SCEN_DIR / "all_scenarios_by_country.parquet")
     c_base = df_c0[df_c0["scenario_id"] == "R1__obs__2006_2025"].copy()
@@ -1221,6 +1260,31 @@ def build_excel_workbooks() -> None:
     ws_dc = wb1.create_sheet("MidCentury_Decomposition")
     _style_sheet(ws_dc, dec_c, "National Additive Decomposition (2046–2065 SSP2-4.5, five model mean)")
 
+    r3_csv = SCEN_DIR / "r3_locked_assets/r3_locked_assets_summary.csv"
+    if r3_csv.exists():
+        ws_r3 = wb1.create_sheet("Locked_Assets_40yr_NPV")
+        _style_sheet(ws_r3, pd.read_csv(r3_csv), "Fixed-Network 40-Year Lifetime NPV, Single-Window Exposure and Carbon Consequences (SSP2-4.5)")
+
+    cf_path = SCEN_DIR / "counterfactual_and_planning_summary.json"
+    if cf_path.exists():
+        cf = json.loads(cf_path.read_text(encoding="utf-8"))
+        cf_rows = []
+        for k_sec, v_sec in cf.items():
+            if isinstance(v_sec, dict):
+                for k_sub, v_sub in v_sec.items():
+                    if isinstance(v_sub, dict):
+                        for k_m, v_m in v_sub.items():
+                            if isinstance(v_m, (int, float, str)):
+                                cf_rows.append({"suite": k_sec, "case": k_sub, "metric": k_m, "value": v_m})
+                            elif isinstance(v_m, dict):
+                                for k_leaf, v_leaf in v_m.items():
+                                    if isinstance(v_leaf, (int, float, str)):
+                                        cf_rows.append({"suite": k_sec, "case": f"{k_sub}__{k_m}", "metric": k_leaf, "value": v_leaf})
+                    elif isinstance(v_sub, (int, float, str)):
+                        cf_rows.append({"suite": k_sec, "case": "global", "metric": k_sub, "value": v_sub})
+        ws_cf = wb1.create_sheet("Counterfactuals_Summary")
+        _style_sheet(ws_cf, pd.DataFrame(cf_rows), "Counterfactual Mechanism Attribution, CHP Accounting Conventions and Forward-Climate Planning")
+
     gwl_df = df_g[df_g["group"] == "GWL"][["scenario_id", "subgroup", "model", "ssp", "start_year", "end_year", "D_total_ej_yr", "U_ej_yr", "P_ej_yr", "co2_abated_mt_yr"]].copy()
     ws_gwl = wb1.create_sheet("GWL_Crossings")
     _style_sheet(ws_gwl, gwl_df, "Exact 20 Year Global Warming Level Windows (1.5, 2.0 and 3.0 °C)")
@@ -1244,21 +1308,24 @@ def build_excel_workbooks() -> None:
     wb2.remove(wb2.active)
     fig_csvs = [
         ("Fig2_Trajectory", SRC_DIR / "Figure2_source_data.csv", "Source Data for Fig. 2 | Global 1946–2100 Economic Waste Heat Potential Trajectory"),
+        ("Fig2c_GWL_Regression", SRC_DIR / "Figure2c_gwl_source_data.csv", "Source Data for Fig. 2c | 33 Global Warming Level Crossings & 5-GCM Cluster-Robust Fit"),
         ("Fig3_Decomposition", SRC_DIR / "Figure3_source_data.csv", "Source Data for Fig. 3 | Global, National and Stratified Additive Decomposition (2046–2065 SSP2-4.5)"),
         ("Fig4_PresentNetworks", SRC_DIR / "Figure4_source_data.csv", "Source Data for Fig. 4 | Network Capital Exposure, Cost Savings and Carbon Abatement Across Fixed Networks"),
-        ("Fig5_Transitions", SRC_DIR / "Figure5_source_data.csv", "Source Data for Fig. 5 | Mid Century 2050 Energy Transitions and Sectoral Supply"),
-        ("ED_Fig1d_MILP", SRC_DIR / "Extended_Data_Fig1d_milp_source_data.csv", "Source Data for Extended Data Fig. 1d | Exact HiGHS MILP vs Priority Queue Benchmark"),
+        ("Fig4a_3496_Networks", SRC_DIR / "Figure4a_networks_source_data.csv", "Source Data for Fig. 4a | Initial Cost Saving and Demand Change Across 3,496 Present Networks"),
+        ("Fig4d_PTES_Storage", SRC_DIR / "Figure4d_ptes_source_data.csv", "Source Data for Fig. 4d | Seasonal Water Pit Thermal Storage Cost Curves"),
+        ("Fig5_Transitions", SRC_DIR / "Figure5_source_data.csv", "Source Data for Fig. 5 | Mid-Century 2050 Energy Transitions and Sectoral Supply"),
+        ("ED_Fig1bc_EU_Bench", SRC_DIR / "Extended_Data_Fig1bc_eu_validations_source_data.csv", "Source Data for Extended Data Fig. 1b,c | European Demand and Potential Benchmarks"),
+        ("ED_Fig1d_MILP", SRC_DIR / "Extended_Data_Fig1d_milp_source_data.csv", "Source Data for Extended Data Fig. 1d | Exact HiGHS Mixed-Integer Selection vs Priority Queue Across Six National Systems"),
         ("ED_Fig2_Dispatch", SRC_DIR / "Extended_Data_Fig2_dispatch_and_grades_source_data.csv", "Source Data for Extended Data Fig. 2 | Monthly Waste Heat Dispatch by Upgrade Technology"),
-        ("ED_Fig3_Sensitivity", SRC_DIR / "Extended_Data_Fig3_sensitivity_levels_source_data.csv", "Source Data for Extended Data Fig. 3 | Ten Specification Sensitivity Levels"),
+        ("ED_Fig3_Sensitivity", SRC_DIR / "Extended_Data_Fig3_sensitivity_levels_source_data.csv", "Source Data for Extended Data Fig. 3 | Eleven Global Specification Sensitivity Levels"),
         ("ED_Fig4_Pathways", SRC_DIR / "Extended_Data_Fig4_pathway_decomposition_source_data.csv", "Source Data for Extended Data Fig. 4 | Global Decomposition Across SSP1-2.6, SSP2-4.5 and SSP3-7.0"),
     ]
     for sheet_nm, csv_p, title_s in fig_csvs:
         if csv_p.exists():
             ws = wb2.create_sheet(sheet_nm)
             _style_sheet(ws, pd.read_csv(csv_p), title_s)
-    p_src = MS_DIR / "Source_Data_Figures.xlsx"
-    wb2.save(p_src)
-    print(f"[PASS] Wrote {p_src}", flush=True)
+    wb2.save(MS_DIR / "Source_Data.xlsx")
+    print(f"[PASS] Wrote {MS_DIR / 'Source_Data.xlsx'}", flush=True)
 
 
 def main() -> None:

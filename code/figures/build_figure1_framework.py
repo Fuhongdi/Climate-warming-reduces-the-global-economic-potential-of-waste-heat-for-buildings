@@ -51,7 +51,7 @@ def build_nodes_spec(cfg: dict) -> list[dict]:
         {"id": "node_6",   "role": "calculation", "x": 922,  "y": 108, "w": 207, "h": 86, "lines": ["(6) Replay 1946\u20132100", "climate trajectories"]},
         {"id": "node_7",   "role": "calculation", "x": 922,  "y": 289, "w": 207, "h": 86, "lines": ["(7) Decompose regional", "potential changes"]},
         {"id": "node_8",   "role": "calculation", "x": 922,  "y": 467, "w": 207, "h": 86, "lines": ["(8) Lock 40 yr networks", "for present climate"]},
-        {"id": "node_9",   "role": "calculation", "x": 922,  "y": 658, "w": 207, "h": 85, "lines": ["(9) Apply 2050 system", "transitions & 9 tests"]},
+        {"id": "node_9",   "role": "calculation", "x": 922,  "y": 658, "w": 207, "h": 85, "lines": ["(9) Apply 2050 system", "transitions & 10 tests"]},
         {"id": "out_r1",   "role": "output",      "x": 1146, "y": 108, "w": 201, "h": 86, "lines": ["Historical & projected", "global potential"]},
         {"id": "out_r2",   "role": "output",      "x": 1146, "y": 289, "w": 201, "h": 86, "lines": ["Demand, matching &", "viability drivers"]},
         {"id": "out_r3",   "role": "output",      "x": 1146, "y": 467, "w": 201, "h": 86, "lines": ["Exposed network capital", "& lost CO\u2082 abatement"]},

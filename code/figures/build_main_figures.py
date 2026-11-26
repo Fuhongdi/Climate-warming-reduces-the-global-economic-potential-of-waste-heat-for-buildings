@@ -381,7 +381,7 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
     ax_a.text(16.6, y_d0 + 0.5 * h_dtot, f"Building heating\n({D_tot:.2f})", ha="right", va="center", fontsize=FS_COMPACT, linespacing=1.08)
     ax_a.text(35.8, 7.5 + 0.5 * h_durb, f"Urban heating\nareas ({D_urb:.2f})", ha="left", va="center", fontsize=FS_COMPACT, linespacing=1.08)
 
-    # Economic screening split: 7.59 EJ peels downward cleanly to x=57.5; 3.05 EJ arrives at x=69.5..71.5
+    # Economic screening split: non-competitive technical potential peels downward; economic potential arrives at x=69.5..71.5
     x_e0, x_e1 = 69.5, 71.5
     h_econ = 5.6
     y_econ0, y_econ1 = 43.4, 43.4 + h_econ
@@ -396,16 +396,25 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
     ax_a.add_patch(mpatches.Rectangle((x_e0, y_econ0), x_e1 - x_e0, h_eind, facecolor=COL_APRICOT, edgecolor="none", zorder=4))
     ax_a.add_patch(mpatches.Rectangle((x_e0, y_econ0 + h_eind), x_e1 - x_e0, h_epow, facecolor=COL_SAPPHIRE, edgecolor="none", zorder=4))
 
-    # Place Economic potential title ABOVE node and share breakdown ABOVE-LEFT / BELOW-LEFT strictly clear of zoom connectors!
-    ax_a.text(0.5 * (x_e0 + x_e1), y_econ1 + 2.4, f"Economic potential\n{P0:.2f} EJ yr$^{{-1}}$ (28.7%)", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold", linespacing=1.08)
-    ax_a.text(x_e1, y_econ0 - 3.2, "92.8% power plants\n7.1% heavy industry\n<1% electric heat pumps", ha="right", va="top", fontsize=FS_COMPACT, linespacing=1.10)
+    # Place Economic potential title ABOVE node and share breakdown dynamically from baseline outputs
+    P_ind = float(obs0["P_industry_ej_yr"])
+    P_hp = float(obs0["P_hp_ind_power_ej_yr"] + obs0["P_hp_wastewater_ej_yr"])
+    pct_p_u = 100.0 * P0 / max(1e-9, U0)
+    pct_pow = 100.0 * P_pow / max(1e-9, P0)
+    pct_ind = 100.0 * P_ind / max(1e-9, P0)
+    pct_hp = 100.0 * P_hp / max(1e-9, P0)
+    hp_lbl = f"{pct_hp:.1f}%"
+    pct_dh = 100.0 * P0 / DH_CUR
+
+    ax_a.text(0.5 * (x_e0 + x_e1), y_econ1 + 2.4, f"Economic potential\n{P0:.2f} EJ yr$^{{-1}}$ ({pct_p_u:.1f}%)", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold", linespacing=1.08)
+    ax_a.text(x_e1, y_econ0 - 3.2, f"{pct_pow:.1f}% power plants\n{pct_ind:.1f}% heavy industry\n({hp_lbl} via heat pumps)", ha="right", va="top", fontsize=FS_COMPACT, linespacing=1.10)
 
     # Far-right Proportional District Heating Gauge (x = 79.5..98.2, y = 43.0..53.5)
     gx0, gx1 = 79.5, 98.2
     gw = gx1 - gx0
     gy0, gh = 43.0, 10.8
-    gw_econ = gw * (P0 / DH_CUR)
-    gw_pow = gw_econ * (P_pow / P0)
+    gw_econ = gw * min(0.98, P0 / DH_CUR)
+    gw_pow = gw_econ * (P_pow / max(1e-9, P0))
 
     ax_a.plot([x_e1 + 0.3, gx0 - 0.3], [y_econ1, gy0 + gh], ls="--", lw=0.50, color="#444444", zorder=2)
     ax_a.plot([x_e1 + 0.3, gx0 - 0.3], [y_econ0, gy0], ls="--", lw=0.50, color="#444444", zorder=2)
@@ -415,7 +424,7 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
     ax_a.add_patch(mpatches.Rectangle((gx0 + gw_pow, gy0 + 1.8), gw_econ - gw_pow, gh - 3.6, facecolor=COL_APRICOT, edgecolor="none", zorder=4))
     ax_a.plot([gx0 + gw_econ, gx0 + gw_econ], [gy0 - 1.4, gy0 + gh + 1.4], color="#000000", lw=0.85, zorder=5)
 
-    ax_a.text(gx0 + gw_econ + 1.0, gy0 + gh + 2.4, f"{P0:.2f} EJ yr$^{{-1}}$ (40.3%)", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
+    ax_a.text(gx0 + gw_econ + 1.0, gy0 + gh + 2.4, f"{P0:.2f} EJ yr$^{{-1}}$ ({pct_dh:.1f}%)", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
     ax_a.text(gx0, gy0 - 2.2, "0%", ha="left", va="top", fontsize=FS_COMPACT)
     ax_a.text(gx1, gy0 - 2.2, "100%", ha="right", va="top", fontsize=FS_COMPACT)
     ax_a.text(0.5 * (gx0 + gx1), gy0 - 10.2, f"Current building\ndistrict heating ({DH_CUR:.2f} EJ yr$^{{-1}}$)", ha="center", va="top", fontsize=FS_COMPACT, linespacing=1.10)
@@ -426,18 +435,21 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
     r1["mid"] = 0.5 * (r1["start_year"] + r1["end_year"])
     obs = r1[r1["ssp"] == "obsclim"].sort_values("mid")
 
+    ylo_b = 1.00 if float(r1["P_ej_yr"].min()) < 1.48 else 1.50
+    yhi_b = max(3.68, float(obs["P_ej_yr"].max()) + 0.28)
+
     ax_b.axvspan(1946, 2015.5, facecolor=COL_HIST_BG, zorder=0)
     ax_b.axvline(2015.5, ls=":", lw=0.65, color="#333333", zorder=2)
     ax_b.axhline(P0, ls="--", lw=0.55, color="#333333", zorder=2)
-    ax_b.text(2012.5, 3.63, "Observed", ha="right", va="top", fontsize=FS_COMPACT)
-    ax_b.text(2018.5, 3.63, "Projected", ha="left", va="top", fontsize=FS_COMPACT)
+    ax_b.text(2012.5, yhi_b - 0.05, "Observed", ha="right", va="top", fontsize=FS_COMPACT)
+    ax_b.text(2018.5, yhi_b - 0.05, "Projected", ha="left", va="top", fontsize=FS_COMPACT)
 
     ax_b.plot(obs["mid"], obs["P_ej_yr"], color="#000000", lw=1.65, marker="o", ms=3.6, zorder=6)
     obs_pts = list(zip(obs["mid"], obs["P_ej_yr"]))
-    ax_b.text(obs_pts[0][0], obs_pts[0][1] + 0.05, "3.42", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_b.text(obs_pts[1][0], obs_pts[1][1] + 0.05, "3.42", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_b.text(obs_pts[2][0] + 1.5, obs_pts[2][1] + 0.05, "3.24", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_b.text(obs_pts[3][0] + 2.2, obs_pts[3][1] + 0.05, "3.05", ha="left", va="bottom", fontsize=FS_COMPACT)
+    ax_b.text(obs_pts[0][0], obs_pts[0][1] + 0.05, f"{obs_pts[0][1]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
+    ax_b.text(obs_pts[1][0], obs_pts[1][1] + 0.05, f"{obs_pts[1][1]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
+    ax_b.text(obs_pts[2][0] + 1.5, obs_pts[2][1] + 0.05, f"{obs_pts[2][1]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
+    ax_b.text(obs_pts[3][0] + 2.2, obs_pts[3][1] + 0.05, f"{obs_pts[3][1]:.2f}", ha="left", va="bottom", fontsize=FS_COMPACT)
 
     base_mod = r1[r1["window_id"] == "2006_2025"].set_index(["model", "ssp"])["P_ej_yr"].to_dict()
     ssp_cfg = [("ssp126", "SSP1-2.6", COL_SAPPHIRE), ("ssp245", "SSP2-4.5", COL_SSP2), ("ssp370", "SSP3-7.0", COL_CORAL)]
@@ -447,7 +459,8 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
 
     for scode, slbl, scol in ssp_cfg:
         sub = r1[r1["ssp"] == scode].copy()
-        sub["P_plot"] = np.where(sub["window_id"] == "2006_2025", P0, sub["P_ej_yr"])
+        # Anchor 2006-2025 midpoint at P0 and plot exact 5-GCM projected P_ej_yr so levels match Extended Data Table 2
+        sub["P_plot"] = np.where(sub["window_id"] == "2006_2025", P0, sub["P_ej_yr"].astype(float))
         for mcode, _, mk in GCM_ORDER:
             msub = sub[sub["model"] == mcode].sort_values("mid")
             ax_b.plot(msub["mid"], msub["P_plot"], color=scol, lw=0.45, alpha=0.38, zorder=3)
@@ -467,9 +480,9 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
             src_rows.append({"series": slbl, "mid_year": gr["mid"], "P_mean_ej": gr["mean"], "P_min_ej": gr["min"], "P_max_ej": gr["max"]})
 
     ax_b.set_xlim(1946, 2110)
-    ax_b.set_ylim(1.50, 3.68)
+    ax_b.set_ylim(ylo_b, yhi_b)
     ax_b.set_xticks([1950, 1975, 2000, 2025, 2050, 2075, 2100])
-    ax_b.set_yticks([1.5, 2.0, 2.5, 3.0, 3.5])
+    ax_b.set_yticks([t for t in [1.0, 1.5, 2.0, 2.5, 3.0, 3.5] if ylo_b - 0.01 <= t <= yhi_b])
     ax_b.set_xlabel("Year")
     ax_b.set_ylabel("Global economic potential (EJ yr$^{-1}$)")
 
@@ -508,8 +521,9 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
 
     gwl = df_glob[df_glob["group"] == "GWL"].copy()
     gwl["x_c"] = gwl["subgroup"].map({"GWL_1.5C": 1.5, "GWL_2.0C": 2.0, "GWL_3.0C": 3.0})
-    gwl["P_al"] = gwl["P_ej_yr"].astype(float)
-    gwl["dp_pct"] = 100.0 * (gwl["P_al"] / P0 - 1.0)
+    gwl["p_base_mod"] = [base_mod[(r["model"], r["ssp"])] for _, r in gwl.iterrows()]
+    gwl["dp_pct"] = 100.0 * (gwl["P_ej_yr"].astype(float) / gwl["p_base_mod"] - 1.0)
+    gwl["P_al"] = P0 * (1.0 + gwl["dp_pct"] / 100.0)
 
     rng = np.random.default_rng(11)
     sc_col = {"ssp126": COL_SAPPHIRE, "ssp245": COL_SSP2, "ssp370": COL_CORAL}
@@ -538,18 +552,39 @@ def build_figure_2(df_glob: pd.DataFrame, df_streams: pd.DataFrame) -> dict:
     m_h = [mpl.lines.Line2D([], [], color="none", markeredgecolor="#000000", marker=mk, ms=3.5, markeredgewidth=0.65, label=ml) for _, ml, mk in GCM_ORDER]
     ax_c.legend(handles=m_h, loc="upper right", bbox_to_anchor=(0.99, 0.99), frameon=False, fontsize=FS_COMPACT, handlelength=0.8, labelspacing=0.18)
 
-    res = stats.linregress(gwl["x_c"], gwl["P_al"])
-    res_pct = stats.linregress(gwl["x_c"], gwl["dp_pct"])
+    # Exact 5-GCM cluster-robust (CR1, df = G - 1 = 4) OLS fit & 95% confidence band
+    x_vec = gwl["x_c"].to_numpy(dtype=float)
+    y_vec = gwl["P_al"].to_numpy(dtype=float)
+    y_pct_vec = gwl["dp_pct"].to_numpy(dtype=float)
+    res_pct = stats.linregress(x_vec, y_pct_vec)
+
+    X_mat = np.column_stack([np.ones_like(x_vec), x_vec])
+    XtX_inv = np.linalg.inv(X_mat.T @ X_mat)
+    beta_hat = XtX_inv @ (X_mat.T @ y_vec)
+    resid_vec = y_vec - X_mat @ beta_hat
+    clusters = gwl["model"].astype(str).to_numpy()
+    uniq_cl = sorted(set(clusters))
+    G_cl = len(uniq_cl)
+    meat = np.zeros((2, 2), dtype=float)
+    for cl in uniq_cl:
+        m_cl = clusters == cl
+        u_g = X_mat[m_cl].T @ resid_vec[m_cl]
+        meat += np.outer(u_g, u_g)
+    cr1_scale = (G_cl / max(1, G_cl - 1)) * ((len(x_vec) - 1) / max(1, len(x_vec) - 2))
+    V_cr1 = cr1_scale * (XtX_inv @ meat @ XtX_inv)
+    slope_pct_se_cr1 = 100.0 * math.sqrt(max(0.0, float(V_cr1[1, 1]))) / max(1e-9, P0)
+
     xx = np.linspace(1.38, 3.18, 60)
-    yy = res.intercept + res.slope * xx
-    n_g = len(gwl)
-    se = res.stderr * np.sqrt(1 / n_g + (xx - gwl["x_c"].mean()) ** 2 / ((gwl["x_c"] - gwl["x_c"].mean()) ** 2).sum())
-    t_q = stats.t.ppf(0.975, n_g - 2)
-    ax_c.fill_between(xx, yy - t_q * se, yy + t_q * se, color="#D8DEE6", alpha=0.65, lw=0, zorder=2)
+    X_grid = np.column_stack([np.ones_like(xx), xx])
+    yy = X_grid @ beta_hat
+    se_cr1 = np.sqrt(np.maximum(0.0, np.sum((X_grid @ V_cr1) * X_grid, axis=1)))
+    t_q = float(stats.t.ppf(0.975, max(1, G_cl - 1)))
+    ax_c.fill_between(xx, yy - t_q * se_cr1, yy + t_q * se_cr1, color="#D8DEE6", alpha=0.65, lw=0, zorder=2)
     ax_c.plot(xx, yy, color="#000000", lw=1.15, zorder=4.5)
 
-    ax_c.text(0.04, 0.03, "$n$ = 33", transform=ax_c.transAxes, ha="left", va="bottom", fontsize=FS_COMPACT)
+    ax_c.text(0.04, 0.03, f"$n$ = {len(gwl)} (5 GCMs)", transform=ax_c.transAxes, ha="left", va="bottom", fontsize=FS_COMPACT)
     ax_c.text(0.97, 0.03, f"Slope = {fm(res_pct.slope, '.1f')}% °C$^{{-1}}$, $R^2$ = {res_pct.rvalue**2:.2f}", transform=ax_c.transAxes, ha="right", va="bottom", fontsize=FS_COMPACT)
+    gwl.assign(slope_pct_per_c=res_pct.slope, slope_se_cr1_pct_per_c=slope_pct_se_cr1, r2=res_pct.rvalue**2).to_csv(SRC_DIR / "Figure2c_gwl_source_data.csv", index=False)
 
     ax_c.set_xlim(1.15, 3.38)
     ax_c.set_xticks([1.5, 2.0, 3.0])
@@ -621,23 +656,41 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     zx0, zy0 = trans.transform(z_zero["lon"].to_numpy(), z_zero["lat"].to_numpy())
     ax_map.scatter(zx0, zy0, s=0.45, color=COL_ZERO_DOT, alpha=0.58, linewidths=0, rasterized=True, zorder=2)
 
-    zp = df_z.sort_values("P0_gj").copy()
+    # Partition observed 2006-2025 urban heating areas cleanly into P_obs == 0 vs P_obs > 0 (100% consistent counts!)
+    z_obs_pos = z_all[z_all[p_col] > 0].copy()
+    p0_obs_ej = float(z_obs_pos[p_col].sum() / 1e9)
+    zp = z_obs_pos[["zone_id", "lat", "lon", p_col]].rename(columns={p_col: "P0_obs_gj"}).merge(
+        df_z[["zone_id", "dP_rel_pct"]], on="zone_id", how="left"
+    )
+    zp["dP_rel_pct"] = zp["dP_rel_pct"].fillna(0.0)
+    zp = zp.sort_values("P0_obs_gj").copy()
+
     vx, vy = trans.transform(zp["lon"].to_numpy(), zp["lat"].to_numpy())
     cmap_loss = mcolors.LinearSegmentedColormap.from_list(
         "pro_fig3_ramp", ["#FEF098", "#F9B872", "#E65C3B", "#AC2428", "#671019"], N=256
     )
     vals_loss = np.clip(-zp["dP_rel_pct"].to_numpy(), 0.0, 45.0)
-    sz_v = np.clip(np.sqrt(zp["P0_gj"].to_numpy() / 1e6) * 8.2, 1.8, 56.0)
+    sz_v = np.clip(np.sqrt(zp["P0_obs_gj"].to_numpy() / 1e6) * 8.2, 1.8, 56.0)
     sc = ax_map.scatter(vx, vy, c=vals_loss, cmap=cmap_loss, vmin=0, vmax=45, s=sz_v, alpha=0.92, edgecolors="white", linewidths=0.32, rasterized=True, zorder=3)
 
+    b0_idx = df_country[df_country["scenario_id"] == "R1__obs__2006_2025"].set_index("iso3")
+    df_dec_map = pd.read_parquet(SCEN_DIR / "r2_decomposition/r2_eq6_decomposition_all.parquet")
+    c_mid_dp = df_dec_map[(df_dec_map["level"] == "country") & (df_dec_map["ssp"] == "ssp245") & (df_dec_map["window_id"] == "2046_2065")].groupby("entity_id")["dP_rel_pct"].mean().to_dict()
+
+    usa_u = float(b0_idx.loc["USA", "U_gj"]) / 1e9
+    usa_p = float(b0_idx.loc["USA", "P_gj"]) / 1e9
+    deu_p = float(b0_idx.loc["DEU", "P_gj"]) / 1e9
+    rus_p = float(b0_idx.loc["RUS", "P_gj"]) / 1e9
+    chn_p = float(b0_idx.loc["CHN", "P_gj"]) / 1e9
+
     callouts = [
-        ("United States\n(2.08 EJ technical,\n0.001 EJ economic)", -98, 37, -142, 26),
-        ("Sweden\n(\u221243.3%)", 16, 61, 5, 78),
-        ("Denmark\n(\u221214.8%)", 10, 56, -25, 57),
-        ("Germany\n(0.22 EJ, \u221210.8%)", 10, 50, -26, 40),
-        ("Italy\n(\u221220.4%)", 12.5, 43, 18, 24),
-        ("Russia\n(0.89 EJ, \u22129.2%)", 62, 56, 86, 70),
-        ("China\n(1.33 EJ, \u221212.0%)", 117, 37, 155, 22),
+        (f"United States\n({usa_u:.2f} EJ technical,\n{usa_p:.3f} EJ economic)", -98, 37, -142, 26),
+        (f"Sweden\n({fm(c_mid_dp.get('SWE', 0.0), '.1f')}%)", 16, 61, 5, 78),
+        (f"Denmark\n({fm(c_mid_dp.get('DNK', 0.0), '.1f')}%)", 10, 56, -25, 57),
+        (f"Germany\n({deu_p:.2f} EJ, {fm(c_mid_dp.get('DEU', 0.0), '.1f')}%)", 10, 50, -26, 40),
+        (f"Italy\n({fm(c_mid_dp.get('ITA', 0.0), '.1f')}%)", 12.5, 43, 18, 24),
+        (f"Russia\n({rus_p:.2f} EJ, {fm(c_mid_dp.get('RUS', 0.0), '.1f')}%)", 62, 56, 86, 70),
+        (f"China\n({chn_p:.2f} EJ, {fm(c_mid_dp.get('CHN', 0.0), '.1f')}%)", 117, 37, 155, 22),
     ]
     for txt_c, lon0, lat0, lon1, lat1 in callouts:
         x0, y0 = trans.transform(lon0, lat0)
@@ -679,12 +732,18 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     ax_pac.legend(loc="lower center", bbox_to_anchor=(0.46, 1.00), ncol=2, frameon=False, fontsize=FS_COMPACT, handlelength=0.8, columnspacing=0.6, handletextpad=0.3)
     lock_spines_above_data(ax_pac)
 
-    # Use real Line2D markers for map legend so 100% of Text objects are pure #000000!
+    # Use real Line2D markers for map legend with exact dynamic counts from observed 2006-2025 zones
+    n_unviable_z = len(z_zero)
     map_leg_h = [
-        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor=COL_ZERO_DOT, markeredgecolor="none", ms=4.5, label="52,324 urban areas with zero economic potential"),
-        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor="white", markeredgecolor="#000000", markeredgewidth=0.65, ms=4.8, label="5,304 viable urban heating areas, 3.05 EJ yr$^{-1}$"),
+        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor=COL_ZERO_DOT, markeredgecolor="none", ms=4.5, label=f"{n_unviable_z:,} urban heating areas with zero economic potential"),
+        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor="white", markeredgecolor="#000000", markeredgewidth=0.65, ms=4.8, label=f"{len(zp):,} viable urban heating areas, {p0_obs_ej:.2f} EJ yr$^{{-1}}$"),
     ]
-    fig.legend(handles=map_leg_h, loc="center left", bbox_to_anchor=(0.422, 0.542), frameon=False, fontsize=FS_COMPACT, handletextpad=0.35, labelspacing=0.35)
+    lg_map = fig.legend(
+        handles=map_leg_h, loc="center left", bbox_to_anchor=(0.415, 0.548),
+        frameon=True, facecolor="white", framealpha=0.94, edgecolor="none",
+        fontsize=FS_COMPACT, handletextpad=0.35, labelspacing=0.35,
+    )
+    lg_map.set_zorder(10)
 
     cax = fig.add_axes([0.380, 0.484, 0.255, 0.013])
     cb = fig.colorbar(sc, cax=cax, orientation="horizontal", extend="max")
@@ -741,9 +800,9 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
                 if pos_l > 0.05:
                     ax_b.plot([pos_l, pos_l], [yi - 0.34, yi + 0.34], color="white", lw=0.55, zorder=3.5)
                 pos_l += val
-        if r["lo"] < -59.0:
+        if r["lo"] < -62.5:
             ax_b.errorbar(r["net"], yi, xerr=[[0.0], [r["hi"] - r["net"]]], fmt="D", ms=3.2, color="#000000", ecolor="#000000", elinewidth=0.65, capsize=1.6, zorder=6)
-            ax_b.annotate("", xy=(-59.2, yi), xytext=(r["net"], yi), arrowprops=dict(arrowstyle="->,head_width=0.14,head_length=0.22", color="#000000", lw=0.65), zorder=6)
+            ax_b.annotate("", xy=(-63.2, yi), xytext=(r["net"], yi), arrowprops=dict(arrowstyle="->,head_width=0.14,head_length=0.22", color="#000000", lw=0.65), zorder=6)
             ax_b.text(pos_l + 0.8, yi, f"{fm(r['net'], '.1f')}%", va="center", ha="left", fontsize=FS_COMPACT)
         else:
             ax_b.errorbar(r["net"], yi, xerr=[[r["net"] - r["lo"]], [r["hi"] - r["net"]]], fmt="D", ms=3.2, color="#000000", ecolor="#000000", elinewidth=0.65, capsize=1.6, zorder=6)
@@ -754,7 +813,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     ax_b.axhline(len(c_rows) - 0.5, ls="--", lw=0.50, color="#444444", zorder=10)
     ax_b.set_yticks(yb)
     ax_b.set_yticklabels([r["lbl"] for r in rows_b], fontsize=FS_COMPACT)
-    ax_b.set_xlim(-60, 14)
+    ax_b.set_xlim(-64, 14)
     ax_b.set_ylim(-0.65, len(rows_b) - 0.35)
     ax_b.set_xticks([-50, -30, -10, 0, 10])
     ax_b.set_xticklabels([f"{MINUS}50", f"{MINUS}30", f"{MINUS}10", "0", "+10"])
@@ -764,23 +823,22 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
     clean_ax(ax_c, "x")
     df_lat = pd.read_csv(SCEN_DIR / "r2_decomposition/r2_stratified_by_abs_lat_band.csv")
     df_sz = pd.read_csv(SCEN_DIR / "r2_decomposition/r2_stratified_by_size_tier.csv")
+    df_pm_strat = pd.read_csv(SCEN_DIR / "r2_decomposition/r2_stratified_by_model_all.csv")
     df_lat = df_lat[df_lat["P0_pj"] > 0.5].copy()
 
-    z_meta = df_z[["zone_id", "P0_gj", "lat", "baseline_mean_mw"]].copy()
-    z_meta["lat_lbl"] = pd.cut(z_meta["lat"].abs(), bins=[0, 30, 40, 50, 60, 90], labels=["<30°", "30–40°", "40–50°", "50–60°", ">60°"], include_lowest=True)
-    z_meta["sz_lbl"] = pd.cut(z_meta["baseline_mean_mw"], bins=[0, 10, 100, 1e9], labels=["1–10 MW areas", "10–100 MW areas", ">100 MW areas"], include_lowest=True)
     gcm_lat_pts: dict[str, list[tuple[str, float]]] = {}
     gcm_sz_pts: dict[str, list[tuple[str, float]]] = {}
-    for mcode, _, _ in GCM_ORDER:
-        zfp = SCEN_DIR / f"zones/R1__{mcode}__ssp245__2046_2065_zones.parquet"
-        if zfp.exists():
-            zm = pd.read_parquet(zfp)[["zone_id", p_col]].merge(z_meta, on="zone_id", how="inner")
-            for band, grp_b in zm.groupby("lat_lbl", observed=True):
-                dp_b = 100.0 * (grp_b[p_col].sum() - grp_b["P0_gj"].sum()) / max(1.0, grp_b["P0_gj"].sum())
-                gcm_lat_pts.setdefault(str(band), []).append((mcode, float(dp_b)))
-            for stier, grp_s in zm.groupby("sz_lbl", observed=True):
-                dp_s = 100.0 * (grp_s[p_col].sum() - grp_s["P0_gj"].sum()) / max(1.0, grp_s["P0_gj"].sum())
-                gcm_sz_pts.setdefault(str(stier), []).append((mcode, float(dp_s)))
+    for _, r_m in df_pm_strat.iterrows():
+        st_type = str(r_m["stratum_type"])
+        raw_st = str(r_m["stratum"])
+        m_id = str(r_m["model"])
+        dp_v = float(r_m["dP_rel_pct"])
+        if st_type == "abs_lat_band":
+            lbl_m = raw_st.replace(" deg", "°").replace("-", "–")
+            gcm_lat_pts.setdefault(lbl_m, []).append((m_id, dp_v))
+        elif st_type == "size_tier":
+            lbl_m = raw_st.replace("Small (1-10 MW)", "1–10 MW areas").replace("Medium (10-100 MW)", "10–100 MW areas").replace("Large (>100 MW)", ">100 MW areas")
+            gcm_sz_pts.setdefault(lbl_m, []).append((m_id, dp_v))
 
     lat_rows = []
     for _, r in df_lat.iterrows():
@@ -811,7 +869,7 @@ def build_figure_3(df_country: pd.DataFrame) -> dict:
             "hi": float(max(vals_p)) if vals_p else float(r["dP_rel_pct"]),
             "pts": pts,
         })
-    sz_order = [">100 MW areas", "10–100 MW areas", "1–10 MW areas"]
+    sz_order = [">100 MW cities", "10–100 MW cities", "1–10 MW small cities"]
     sz_rows = sorted(sz_rows, key=lambda d: sz_order.index(d["lbl"]) if d["lbl"] in sz_order else 99)
 
     rows_c = (lat_rows + sz_rows)[::-1]
@@ -882,10 +940,12 @@ def build_figure_4() -> dict:
         lcoh_fut=("lcoh_fut_usd_per_gj", "mean"),
         nb0=("net_benefit_0_usd_yr", "first"),
         nbfut=("net_benefit_fut_usd_yr", "mean"),
+        n_models_uncompetitive=("is_loss_making_fut", "sum"),
     )
     df_lk["m0"] = df_lk["nb0"] / np.maximum(1.0, df_lk["d0"])
     df_lk["dd_pct"] = 100.0 * (df_lk["dfut"] - df_lk["d0"]) / np.maximum(1.0, df_lk["d0"])
-    df_lk["stranded"] = df_lk["nbfut"] < 0
+    df_lk["exposed_capex_5gcm_mean_usd"] = df_lk["cap"] * (df_lk["n_models_uncompetitive"] / 5.0)
+    df_lk["uncompetitive"] = df_lk["nbfut"] < 0
 
     df_near_all = pd.concat([pd.read_parquet(f) for f in near_files], ignore_index=True)
     df_lk_near = df_near_all.groupby(["stream_id", "zone_id"], as_index=False)[["lcoh_fut_usd_per_gj", "sub_D_fut_gj_yr"]].mean()
@@ -897,8 +957,8 @@ def build_figure_4() -> dict:
     ax_b1 = fig.add_axes([0.692, 0.458, 0.120, 0.448])
     ax_b2 = fig.add_axes([0.836, 0.458, 0.122, 0.448], sharey=ax_b1)
 
-    ax_c1 = fig.add_axes([0.076, 0.070, 0.182, 0.285])
-    ax_c2 = fig.add_axes([0.345, 0.070, 0.136, 0.285])
+    ax_c1 = fig.add_axes([0.076, 0.070, 0.194, 0.285])
+    ax_c2 = fig.add_axes([0.352, 0.070, 0.132, 0.285])
     ax_d = fig.add_axes([0.588, 0.070, 0.378, 0.285])
 
     for sp in ax_a.spines.values():
@@ -907,15 +967,29 @@ def build_figure_4() -> dict:
         sp.set_edgecolor("#000000")
         sp.set_zorder(20)
 
+    sw_near = df_r3_sum[df_r3_sum["window_id"] == "2026_2045"]
+    sw_mid = df_r3_sum[df_r3_sum["window_id"] == "2046_2065"]
+    n_tot_net = len(df_lk)
+    tot_cap_b = float(df_lk["cap"].sum() / 1e9)
+    n_loss_m = int(round(float(sw_mid["n_loss_making_links"].mean())))
+    pct_loss_m = float(sw_mid["loss_making_link_share_pct"].mean())
+    exp_cap_m = float(sw_mid["loss_making_capex_billion_usd"].mean())
+    m0_all = df_mid_all["net_benefit_0_usd_yr"] / np.maximum(1.0, df_mid_all["sub_D_0_gj_yr"])
+    sh_lt3 = 100.0 * float(df_mid_all.loc[df_mid_all["is_loss_making_fut"] & (m0_all < 3.0), "total_sunk_capex_usd"].sum()) / max(1.0, float(df_mid_all.loc[df_mid_all["is_loss_making_fut"], "total_sunk_capex_usd"].sum()))
+    print(f"  [FIG4A INFO] n_ens_uncomp={int(df_lk['uncompetitive'].sum())}, n_loss_5gcm_mean={n_loss_m}, sh_lt3={sh_lt3:.2f}%")
+    w_lcoh0 = float(sw_mid["weighted_lcoh_0_usd_per_gj"].mean())
+    w_lcohn = float(sw_near["weighted_lcoh_fut_usd_per_gj"].mean())
+    w_lcohm = float(sw_mid["weighted_lcoh_fut_usd_per_gj"].mean())
+
     ax_a.axhspan(3.0, 15.2, facecolor=COL_ICE_ZONE, zorder=0)
     ax_a.axhspan(0.0, 3.0, facecolor=COL_BLUSH_ZONE, zorder=0)
     ax_a.axhline(3.0, ls="--", lw=0.65, color="#000000", zorder=4)
     ax_a.text(-39.2, 3.25, "Threshold", fontsize=FS_COMPACT, va="bottom", ha="left",
               bbox=dict(boxstyle="square,pad=0.18", facecolor=COL_ICE_ZONE, edgecolor="none", alpha=0.96), zorder=5)
-    ax_a.text(-39.2, 0.30, "Initial saving <3.0 USD GJ$^{-1}$ holds\n92.2% of exposed capital (34.8B USD)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.14,
+    ax_a.text(-39.2, 0.22, f"Initial saving <3.0 USD GJ$^{{-1}}$ holds\n{sh_lt3:.1f}% of exposed capital ({exp_cap_m:.1f}B USD,\npooled across models)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.10,
               bbox=dict(boxstyle="square,pad=0.06", facecolor=COL_BLUSH_ZONE, edgecolor="none", alpha=0.88), zorder=5)
 
-    for mask, col, zo in [(~df_lk["stranded"], COL_SAPPHIRE, 2.8), (df_lk["stranded"], COL_CORAL, 3.2)]:
+    for mask, col, zo in [(~df_lk["uncompetitive"], COL_SAPPHIRE, 2.8), (df_lk["uncompetitive"], COL_CORAL, 3.2)]:
         sub = df_lk[mask].sort_values("cap", ascending=False)
         sz = np.clip(np.sqrt(sub["cap"].to_numpy() / 1e6) * 1.45, 2.2, 32.0)
         ax_a.scatter(
@@ -923,11 +997,11 @@ def build_figure_4() -> dict:
             s=sz, color=col, alpha=0.72, edgecolors="white", linewidths=0.28, rasterized=True, zorder=zo
         )
 
-    ax_a.add_patch(mpatches.Rectangle((-39.5, 4.45), 17.6, 3.25, facecolor=COL_ICE_ZONE, edgecolor="none", alpha=0.92, zorder=4.4))
-    ax_a.text(0.04, 0.49, "$n$ = 5,327 networks (402.3B USD)", transform=ax_a.transAxes, fontsize=FS_COMPACT, va="top", ha="left", zorder=5)
+    ax_a.add_patch(mpatches.Rectangle((-39.5, 4.45), 19.2, 3.25, facecolor=COL_ICE_ZONE, edgecolor="none", alpha=0.92, zorder=4.4))
+    ax_a.text(0.04, 0.49, f"$n$ = {n_tot_net:,} networks ({tot_cap_b:.1f}B USD)", transform=ax_a.transAxes, fontsize=FS_COMPACT, va="top", ha="left", zorder=5)
     leg_a = [
         mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor=COL_SAPPHIRE, markeredgecolor="white", ms=4.8, label="Remains economic"),
-        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor=COL_CORAL, markeredgecolor="white", ms=4.8, label="Turns uneconomic\n(14.7%, 782 networks)"),
+        mpl.lines.Line2D([], [], color="none", marker="o", markerfacecolor=COL_CORAL, markeredgecolor="white", ms=4.8, label=f"Turns uncompetitive\n({pct_loss_m:.1f}%, {n_loss_m:,} networks)"),
     ]
     lg_obj = ax_a.legend(handles=leg_a, loc="upper left", bbox_to_anchor=(0.02, 0.43), frameon=False, fontsize=FS_COMPACT, handletextpad=0.3, labelspacing=0.25)
     lg_obj.set_zorder(5.2)
@@ -938,11 +1012,11 @@ def build_figure_4() -> dict:
     ax_a.set_xticklabels([f"{MINUS}40", f"{MINUS}30", f"{MINUS}20", f"{MINUS}10", "0"])
     ax_a.set_yticks([0, 3, 6, 9, 12, 15])
     ax_a.set_xlabel("2046–2065 heating demand change (%)")
-    ax_a.set_ylabel("Initial cost saving over building alternatives (USD GJ$^{-1}$)")
+    ax_a.set_ylabel("Initial cost saving over building heating (USD GJ$^{-1}$)")
 
     xg = np.linspace(-40, 0, 200)
     yg = np.linspace(0, 15.2, 200)
-    for mask, col, al in [(~df_lk["stranded"], COL_SAPPHIRE, 0.48), (df_lk["stranded"], COL_CORAL, 0.55)]:
+    for mask, col, al in [(~df_lk["uncompetitive"], COL_SAPPHIRE, 0.48), (df_lk["uncompetitive"], COL_CORAL, 0.55)]:
         sub = df_lk[mask]
         kx = stats.gaussian_kde(np.clip(sub["dd_pct"], -39.5, -0.2), weights=sub["cap"], bw_method=0.28)(xg)
         kx = kx / kx.max()
@@ -963,16 +1037,21 @@ def build_figure_4() -> dict:
     clean_ax(ax_cdf, None)
     cdf_handles = []
     for vals, wts, col, ls, lbl_c in [
-        (df_lk["lcoh0"].to_numpy(), df_lk["d0"].to_numpy(), COL_SAPPHIRE, "-", "Present (13.25)"),
-        (df_lk_near["lcoh_fut_usd_per_gj"].to_numpy(), df_lk_near["sub_D_fut_gj_yr"].to_numpy(), COL_SSP2, "--", "2026–2045 (13.61)"),
-        (df_lk["lcoh_fut"].to_numpy(), df_lk["dfut"].to_numpy(), COL_CORAL, "-", "2046–2065 (14.01)"),
+        (df_lk["lcoh0"].to_numpy(), df_lk["d0"].to_numpy(), COL_SAPPHIRE, "-", f"Present ({w_lcoh0:.2f})"),
+        (df_lk_near["lcoh_fut_usd_per_gj"].to_numpy(), df_lk_near["sub_D_fut_gj_yr"].to_numpy(), COL_SSP2, "--", f"2026–2045 ({w_lcohn:.2f})"),
+        (df_lk["lcoh_fut"].to_numpy(), df_lk["dfut"].to_numpy(), COL_CORAL, "-", f"2046–2065 ({w_lcohm:.2f})"),
     ]:
         ix = np.argsort(vals)
         vs = np.clip(vals[ix], 5.5, 24.0)
         ws = 100.0 * np.cumsum(wts[ix]) / wts.sum()
         ax_cdf.plot(vs, ws, color=col, ls=ls, lw=1.25)
         cdf_handles.append(mpl.lines.Line2D([], [], color=col, ls=ls, lw=1.20, label=lbl_c))
-    ax_cdf.legend(handles=cdf_handles, loc="upper left", bbox_to_anchor=(-0.02, 1.04), frameon=False, fontsize=FS_COMPACT, handlelength=0.95, handletextpad=0.3, labelspacing=0.14)
+    lg_cdf = ax_cdf.legend(
+        handles=cdf_handles, loc="lower right", bbox_to_anchor=(1.02, 0.02),
+        frameon=True, facecolor="white", framealpha=0.92, edgecolor="none",
+        fontsize=FS_COMPACT, handlelength=0.95, handletextpad=0.3, labelspacing=0.14,
+    )
+    lg_cdf.set_zorder(10)
     ax_cdf.set_xlim(5.5, 24.0)
     ax_cdf.set_ylim(0, 102)
     ax_cdf.set_xticks([10, 15, 20])
@@ -987,10 +1066,15 @@ def build_figure_4() -> dict:
     cm["str_b"] = cm["str_c"] / 1e9
     cm["pct"] = 100.0 * cm["str_b"] / np.maximum(1e-9, cm["tot_b"])
     c_agg = cm.groupby("iso3", as_index=False).agg(
+        tot_m=("tot_b", "mean"),
         str_m=("str_b", "mean"), str_lo=("str_b", "min"), str_hi=("str_b", "max"),
         pct_m=("pct", "mean"), pct_lo=("pct", "min"), pct_hi=("pct", "max"),
     )
-    sel_isos = ["CHN", "RUS", "DEU", "POL", "KAZ", "CZE", "NLD", "SWE", "ISR", "CAN", "JPN", "ITA", "DNK"]
+    cont_cand = [c for c in ["CHN", "RUS", "DEU", "POL", "KAZ", "CZE", "BLR", "AUT", "FIN"] if c in set(c_agg["iso3"])]
+    warm_cand = [c for c in ["GBR", "NLD", "KOR", "SWE", "ITA", "DNK", "CAN", "JPN", "FRA"] if c in set(c_agg["iso3"])]
+    cont_sel = c_agg[c_agg["iso3"].isin(cont_cand)].sort_values("str_m", ascending=False).head(7)["iso3"].tolist()
+    warm_sel = c_agg[c_agg["iso3"].isin(warm_cand)].sort_values("pct_m", ascending=False).head(6)["iso3"].tolist()
+    sel_isos = cont_sel + warm_sel
     c_plot = c_agg.set_index("iso3").loc[sel_isos].iloc[::-1].reset_index()
     yb = np.arange(len(c_plot))
 
@@ -1003,88 +1087,115 @@ def build_figure_4() -> dict:
         axb.grid(axis="x", linestyle="--", linewidth=0.40, alpha=0.28, color="#888888", zorder=0)
         axb.set_axisbelow(True)
 
+    xmax_b1 = max(12.0, float(c_plot["str_hi"].max()) * 1.32)
     ax_b1.barh(yb, c_plot["str_m"], height=0.64, color=COL_CORAL, edgecolor="none", zorder=3)
     ax_b1.errorbar(c_plot["str_m"], yb, xerr=[c_plot["str_m"] - c_plot["str_lo"], c_plot["str_hi"] - c_plot["str_m"]], fmt="none", ecolor="#000000", elinewidth=0.60, capsize=1.5, zorder=4)
     for yi, r in c_plot.iterrows():
-        if r["str_m"] >= 1.5:
-            ax_b1.text(r["str_hi"] + 0.6, yi, f"{r['str_m']:.1f}", va="center", ha="left", fontsize=FS_COMPACT)
+        if r["str_m"] >= 0.8:
+            ax_b1.text(r["str_hi"] + 0.025 * xmax_b1, yi, f"{r['str_m']:.1f}", va="center", ha="left", fontsize=FS_COMPACT)
 
     ax_b2.barh(yb, c_plot["pct_m"], height=0.64, color=COL_APRICOT, edgecolor="none", zorder=3)
     ax_b2.errorbar(c_plot["pct_m"], yb, xerr=[c_plot["pct_m"] - c_plot["pct_lo"], c_plot["pct_hi"] - c_plot["pct_m"]], fmt="none", ecolor="#000000", elinewidth=0.60, capsize=1.5, zorder=4)
     for yi, r in c_plot.iterrows():
         ax_b2.text(r["pct_hi"] + 2.0, yi, f"{r['pct_m']:.0f}%", va="center", ha="left", fontsize=FS_COMPACT)
 
-    ax_b1.axhline(5.5, ls="--", lw=0.50, color="#333333", zorder=5)
-    ax_b2.axhline(5.5, ls="--", lw=0.50, color="#333333", zorder=5)
+    sep_y = len(warm_sel) - 0.5
+    ax_b1.axhline(sep_y, ls="--", lw=0.50, color="#333333", zorder=5)
+    ax_b2.axhline(sep_y, ls="--", lw=0.50, color="#333333", zorder=5)
     ax_b1.set_yticks(yb)
-    ax_b1.set_yticklabels([cname(i) for i in c_plot["iso3"]], fontsize=FS_COMPACT)
+    ax_b1.set_yticklabels(["UK" if i == "GBR" else cname(i) for i in c_plot["iso3"]], fontsize=FS_COMPACT)
     plt.setp(ax_b2.get_yticklabels(), visible=False)
     ax_b2.tick_params(axis="y", length=1.8)
 
-    ax_b1.set_xlim(0, 27.5)
-    ax_b1.set_xticks([0, 10, 20])
+    ax_b1.set_xlim(0, xmax_b1)
+    t_step_b1 = 5 if xmax_b1 <= 16.0 else 10
+    ax_b1.set_xticks([0, t_step_b1, 2 * t_step_b1])
     ax_b1.text(0.5, 1.03, "Exposed capital\n(billion USD)", transform=ax_b1.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
 
     ax_b2.set_xlim(0, 108)
     ax_b2.set_xticks([0, 40, 80])
-    ax_b2.text(0.5, 1.03, "Exposed investment\nshare (%)", transform=ax_b2.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
+    ax_b2.text(0.5, 1.03, "Share of national\ncapital (%)", transform=ax_b2.transAxes, ha="center", va="bottom", fontsize=FS_COMPACT, linespacing=1.10)
 
-    fig.text(0.980, 0.77, "Large network\nportfolios", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
+    fig.text(0.980, 0.77, "Continental\npipe systems", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
     fig.text(0.980, 0.55, "Warm & electrified\nmarkets", rotation=90, va="center", ha="center", fontsize=FS_COMPACT)
 
     clean_ax(ax_c1, "y")
     clean_ax(ax_c2, "y")
 
+    p0_tot = float(df_r3_sum["P_0_ej_yr"].iloc[0])
     nb0_tot = float(df_lk["nb0"].sum() / 1e9)
-    sw_near = df_r3_sum[df_r3_sum["window_id"] == "2026_2045"]
-    sw_mid = df_r3_sum[df_r3_sum["window_id"] == "2046_2065"]
-    sav_m = [nb0_tot, float(sw_near["net_benefit_fut_billion_usd_yr"].mean()), float(sw_mid["net_benefit_fut_billion_usd_yr"].mean())]
 
-    ax_c1.bar([0, 1, 2], sav_m, width=0.58, color=[COL_SAPPHIRE, COL_SKY_CYAN, COL_SKY_CYAN], edgecolor="none", zorder=3)
-    ax_c1.text(0, sav_m[0] + 0.45, f"{sav_m[0]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_c1.text(1, float(sw_near["net_benefit_fut_billion_usd_yr"].max()) + 0.45, f"{sav_m[1]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_c1.text(2, float(sw_mid["net_benefit_fut_billion_usd_yr"].max()) + 0.45, f"{sav_m[2]:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT)
-    for xi, sw in [(1, sw_near), (2, sw_mid)]:
-        for _, r in sw.iterrows():
-            ax_c1.scatter(xi, r["net_benefit_fut_billion_usd_yr"], facecolors="none", edgecolors="#000000", marker=GCM_MARKER[r["model"]], s=9, linewidths=0.5, zorder=4)
+    ax_c1.axhline(0.0, lw=0.65, color="#000000", zorder=18)
+    bw_c = 0.29
+    off_c = 0.17
+    min_c1_val = -40.0
+    for xi, sw in enumerate([sw_near, sw_mid]):
+        dp_arr = 100.0 * (sw["P_locked_fut_ej_yr"].to_numpy(dtype=float) - p0_tot) / p0_tot
+        dn_arr = 100.0 * (sw["net_benefit_fut_billion_usd_yr"].to_numpy(dtype=float) - nb0_tot) / nb0_tot
+        dp_m, dn_m = float(dp_arr.mean()), float(dn_arr.mean())
+        min_c1_val = min(min_c1_val, float(dn_arr.min()) - 8.5)
 
-    ax_c1.plot([0, 0, 2, 2], [20.1, 21.3, 21.3, 18.0], color="#000000", lw=0.65)
-    ax_c1.annotate("", xy=(2, 17.5), xytext=(2, 18.3), arrowprops=dict(arrowstyle="-|>,head_width=0.18,head_length=0.25", color="#000000", lw=0.65))
-    ax_c1.text(1.0, 21.1, f"{MINUS}23.7%", ha="center", va="top", fontsize=FS_COMPACT)
+        ax_c1.bar(xi - off_c, dp_m, width=bw_c, color=COL_SAPPHIRE, edgecolor="none", zorder=3)
+        ax_c1.bar(xi + off_c, dn_m, width=bw_c, color=COL_CORAL, edgecolor="none", zorder=3)
 
-    ax_c1.set_xlim(-0.55, 2.55)
-    ax_c1.set_ylim(0, 22.8)
-    ax_c1.set_xticks([0, 1, 2])
-    ax_c1.set_xticklabels(["Present", "2026–\n2045", "2046–\n2065"], fontsize=FS_COMPACT)
-    ax_c1.set_yticks([0, 5, 10, 15, 20])
-    ax_c1.set_ylabel("Annual net cost savings\n(billion USD yr$^{-1}$)")
+        for (_, r), dpv, dnv in zip(sw.iterrows(), dp_arr, dn_arr):
+            mk = GCM_MARKER[r["model"]]
+            ax_c1.scatter(xi - off_c, dpv, facecolors="none", edgecolors="#000000", marker=mk, s=8.0, linewidths=0.46, zorder=4.5)
+            ax_c1.scatter(xi + off_c, dnv, facecolors="none", edgecolors="#000000", marker=mk, s=8.0, linewidths=0.46, zorder=4.5)
+
+        if xi == 0:
+            ax_c1.text(xi - off_c, float(dp_arr.min()) - 1.3, f"{MINUS}{abs(dp_m):.1f}%", ha="center", va="top", fontsize=FS_COMPACT)
+            ax_c1.text(xi + off_c, float(dn_arr.min()) - 1.3, f"{MINUS}{abs(dn_m):.1f}%", ha="center", va="top", fontsize=FS_COMPACT)
+        else:
+            mult_r = abs(dn_m) / max(0.1, abs(dp_m))
+            ax_c1.text(xi - off_c, float(dp_arr.min()) - 1.3, f"{MINUS}{abs(dp_m):.1f}%", ha="center", va="top", fontsize=FS_COMPACT, fontweight="bold")
+            ax_c1.text(xi + off_c + 0.02, float(dn_arr.min()) - 1.2, f"{MINUS}{abs(dn_m):.1f}%\n({mult_r:.1f}\u00d7)", ha="center", va="top", fontsize=FS_COMPACT, fontweight="bold", linespacing=0.95)
+
+    leg_c1 = [
+        mpatches.Patch(facecolor=COL_SAPPHIRE, edgecolor="none", label="Delivered heat"),
+        mpatches.Patch(facecolor=COL_CORAL, edgecolor="none", label="Net savings"),
+    ]
+    ax_c1.legend(handles=leg_c1, loc="lower left", bbox_to_anchor=(-0.03, 0.00), frameon=False, fontsize=FS_COMPACT, handlelength=0.85, handletextpad=0.35, labelspacing=0.18)
+
+    ax_c1.set_xlim(-0.50, 1.54)
+    ax_c1.set_ylim(min(-47.5, min_c1_val), 3.0)
+    ax_c1.set_xticks([0, 1])
+    ax_c1.set_xticklabels(["2026–\n2045", "2046–\n2065"], fontsize=FS_COMPACT)
+    ax_c1.set_yticks([0, -15, -30, -45])
+    ax_c1.set_yticklabels(["0", f"{MINUS}15", f"{MINUS}30", f"{MINUS}45"])
+    ax_c1.set_ylabel("Change from present (%)")
     lock_spines_above_data(ax_c1)
 
+    max_c2 = 20.0
     for xi, sw in enumerate([sw_near, sw_mid]):
-        fm_v = float(sw["foregone_co2_abatement_mt_yr"].mean())
-        sm_v = float(sw["stranded_reversion_co2_mt_yr"].mean())
+        fm_v = max(0.0, float(sw["foregone_co2_abatement_mt_yr"].mean()))
+        sm_v = max(0.0, float(sw["stranded_reversion_co2_mt_yr"].mean()))
         ax_c2.bar(xi, fm_v, width=0.58, color=COL_SKY_CYAN, edgecolor="none", zorder=3)
         ax_c2.bar(xi, sm_v, bottom=fm_v, width=0.58, color=COL_CORAL_SOFT, edgecolor="none", zorder=3)
         ax_c2.plot([xi - 0.30, xi + 0.30], [fm_v, fm_v], color="white", lw=0.60, zorder=3.5)
         for _, r in sw.iterrows():
-            ax_c2.scatter(xi, r["foregone_co2_abatement_mt_yr"] + r["stranded_reversion_co2_mt_yr"], facecolors="none", edgecolors="#000000", marker=GCM_MARKER[r["model"]], s=9.5, linewidths=0.5, zorder=5)
+            tv = float(r["foregone_co2_abatement_mt_yr"] + r["stranded_reversion_co2_mt_yr"])
+            max_c2 = max(max_c2, tv)
+            ax_c2.scatter(xi, tv, facecolors="none", edgecolors="#000000", marker=GCM_MARKER[r["model"]], s=9.5, linewidths=0.5, zorder=5)
         if xi == 1:
             ax_c2.text(xi, fm_v + sm_v + 0.6, f"{fm_v + sm_v:.1f}", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
-            ax_c2.text(xi, fm_v * 0.48, f"{fm_v:.1f}", ha="center", va="center", fontsize=FS_COMPACT)
-            ax_c2.text(xi, fm_v + sm_v * 0.48, f"{sm_v:.1f}", ha="center", va="center", fontsize=FS_COMPACT)
+            if fm_v > 2.5:
+                ax_c2.text(xi, fm_v * 0.48, f"{fm_v:.1f}", ha="center", va="center", fontsize=FS_COMPACT)
+            if sm_v > 2.0:
+                ax_c2.text(xi, fm_v + sm_v * 0.48, f"{sm_v:.1f}", ha="center", va="center", fontsize=FS_COMPACT)
 
     leg_c2 = [
         mpatches.Patch(facecolor=COL_SKY_CYAN, edgecolor="none", label="Lower delivery"),
-        mpatches.Patch(facecolor=COL_CORAL_SOFT, edgecolor="none", label="Closure risk"),
+        mpatches.Patch(facecolor=COL_CORAL_SOFT, edgecolor="none", label="Uncompetitive"),
     ]
     ax_c2.legend(handles=leg_c2, loc="upper left", bbox_to_anchor=(-0.04, 1.03), frameon=False, fontsize=FS_COMPACT, handlelength=0.85, labelspacing=0.18)
 
     ax_c2.set_xlim(-0.52, 1.52)
-    ax_c2.set_ylim(0, 39.5)
+    ax_c2.set_ylim(0, max(32.0, max_c2 * 1.25))
     ax_c2.set_xticks([0, 1])
     ax_c2.set_xticklabels(["2026–\n2045", "2046–\n2065"], fontsize=FS_COMPACT)
     ax_c2.set_yticks([0, 10, 20, 30])
-    ax_c2.set_ylabel("Lost & at-risk CO$_2$\n(Mt CO$_2$ yr$^{-1}$)")
+    ax_c2.set_ylabel("Reduced & exposed CO$_2$\n(Mt CO$_2$ yr$^{-1}$)")
     lock_spines_above_data(ax_c2)
 
     clean_ax(ax_d, "y")
@@ -1204,19 +1315,21 @@ def build_figure_4() -> dict:
     for idx_s, sp_val in enumerate(s_pct):
         ptes_rows.append({
             "storage_share_pct": float(round(sp_val, 2)),
-            "uneconomic_lcoh_mean_usd_per_gj": float(un_mean[idx_s]),
-            "uneconomic_lcoh_min_usd_per_gj": float(un_min[idx_s]),
-            "uneconomic_lcoh_max_usd_per_gj": float(un_max[idx_s]),
-            "uneconomic_competing_benchmark_usd_per_gj": comp_bench_un,
+            "uncompetitive_lcoh_mean_usd_per_gj": float(un_mean[idx_s]),
+            "uncompetitive_lcoh_min_usd_per_gj": float(un_min[idx_s]),
+            "uncompetitive_lcoh_max_usd_per_gj": float(un_max[idx_s]),
+            "uncompetitive_competing_benchmark_usd_per_gj": comp_bench_un,
             "all_networks_lcoh_mean_usd_per_gj": float(all_mean[idx_s]),
             "all_networks_lcoh_min_usd_per_gj": float(all_min[idx_s]),
             "all_networks_lcoh_max_usd_per_gj": float(all_max[idx_s]),
             "all_networks_competing_benchmark_usd_per_gj": comp_bench_all,
-            "uneconomic_unrescued_share_pct": unrescued_pct,
+            "uncompetitive_unrescued_share_pct": unrescued_pct,
         })
     pd.DataFrame(ptes_rows).to_csv(SRC_DIR / "Figure4d_ptes_source_data.csv", index=False)
 
-    ax_d.axhspan(comp_bench_un, 34.0, facecolor=COL_BLUSH_ZONE, zorder=0)
+    ymax_d = max(34.0, float(un_max[-1]) + 2.5)
+    ymin_d = min(12.0, float(all_min[0]) - 1.8)
+    ax_d.axhspan(comp_bench_un, ymax_d, facecolor=COL_BLUSH_ZONE, zorder=0)
     ax_d.axhline(comp_bench_un, ls=":", lw=0.75, color=COL_CORAL, zorder=2)
     ax_d.axhline(comp_bench_all, ls="--", lw=0.65, color="#000000", zorder=2)
 
@@ -1229,19 +1342,31 @@ def build_figure_4() -> dict:
     ax_d.scatter([0], [all_mean[0]], color=COL_SAPPHIRE, marker="D", s=16, zorder=5)
 
     leg_d = [
-        mpl.lines.Line2D([], [], color=COL_CORAL, lw=1.70, marker="o", ms=3.6, label="Uneconomic networks (n = 782)"),
-        mpl.lines.Line2D([], [], color=COL_SAPPHIRE, lw=1.70, marker="D", ms=3.4, label="All fixed networks (n = 5,327)"),
+        mpl.lines.Line2D([], [], color=COL_CORAL, lw=1.70, marker="o", ms=3.6, label=f"Uncompetitive networks (n = {n_loss_m:,})"),
+        mpl.lines.Line2D([], [], color=COL_SAPPHIRE, lw=1.70, marker="D", ms=3.4, label=f"All fixed networks (n = {n_tot_net:,})"),
     ]
     ax_d.legend(handles=leg_d, loc="upper left", bbox_to_anchor=(-0.01, 1.02), frameon=False, fontsize=FS_COMPACT, handlelength=1.15, handletextpad=0.4, labelspacing=0.22)
 
-    ax_d.text(1.2, 26.85, f"{un_mean[0]:.2f} USD GJ$^{{-1}}$ at 0%\n({unrescued_pct:.1f}% remain uneconomic)", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.12)
-    ax_d.text(1.2, comp_bench_un - 0.24, f"Uneconomic benchmark ({comp_bench_un:.1f})", fontsize=FS_COMPACT, va="top", ha="left")
-    ax_d.text(1.2, comp_bench_all + 0.20, f"All-network benchmark ({comp_bench_all:.2f})", fontsize=FS_COMPACT, va="bottom", ha="left")
-    ax_d.text(1.3, 13.48, f"{all_mean[0]:.2f} USD GJ$^{{-1}}$", fontsize=FS_COMPACT, va="top", ha="left")
-    ax_d.text(16.2, 15.65, "+24.2 USD GJ$^{-1}$ per stored GJ\n(30% loss, net of boiler offset)", fontsize=FS_COMPACT, va="top", ha="left", linespacing=1.12)
+    y_call_un = 21.6
+    ax_d.plot([0.15, 1.25], [un_mean[0] + 0.28, y_call_un - 0.25], color="#000000", lw=0.45, zorder=4.5)
+    ax_d.text(1.0, y_call_un, f"{un_mean[0]:.2f} USD GJ$^{{-1}}$ at 0%\n{unrescued_pct:.1f}% stay uncompetitive\nat any storage share", fontsize=FS_COMPACT, va="bottom", ha="left", linespacing=1.12)
+    ax_d.text(
+        34.7,
+        comp_bench_un + 0.14,
+        f"Uncompetitive-network\nbenchmark ({comp_bench_un:.2f})",
+        fontsize=FS_COMPACT,
+        va="bottom",
+        ha="right",
+        linespacing=1.05,
+        bbox=dict(boxstyle="square,pad=0.05", facecolor=COL_BLUSH_ZONE, edgecolor="none", alpha=0.92),
+        zorder=4.4,
+    )
+    ax_d.text(34.5, comp_bench_all - 0.35, f"All-network benchmark ({comp_bench_all:.2f})", fontsize=FS_COMPACT, va="top", ha="right")
+    ax_d.text(1.3, all_mean[0] - 0.35, f"{all_mean[0]:.2f} USD GJ$^{{-1}}$", fontsize=FS_COMPACT, va="top", ha="left")
+    ax_d.text(15.5, ymin_d + 2.3, f"+{c_ptes_cap:.1f} USD GJ$^{{-1}}$ per stored GJ\n(30% loss, before boiler offset)", fontsize=FS_COMPACT, va="top", ha="left", linespacing=1.12)
 
     ax_d.set_xlim(0, 35)
-    ax_d.set_ylim(12, 34)
+    ax_d.set_ylim(ymin_d, ymax_d)
     ax_d.set_xticks([0, 5, 10, 15, 20, 25, 30, 35])
     ax_d.set_yticks([12, 16, 20, 24, 28, 32])
     ax_d.set_xlabel("Share of annual heat routed via seasonal pit storage (%)")
@@ -1254,7 +1379,8 @@ def build_figure_4() -> dict:
     panel_tag(fig, 0.540, 0.395, "d")
 
     df_r3_sum.to_csv(SRC_DIR / "Figure4_source_data.csv", index=False)
-    return export_figure(fig, "Figure4_Pipe_Capital_Stranding_and_Carbon")
+    df_lk.to_csv(SRC_DIR / "Figure4a_networks_source_data.csv", index=False)
+    return export_figure(fig, "Figure4_Fixed_Network_Exposure_and_Carbon")
 
 
 # ==============================================================================
@@ -1263,13 +1389,13 @@ def build_figure_4() -> dict:
 # ==============================================================================
 def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
     configure_matplotlib_style()
-    H_MM = 182.0  # Strictly <= 185.0 mm ceiling!
+    H_MM = 184.0  # Strictly <= 185.0 mm ceiling!
     fig = plt.figure(figsize=(W_IN, H_MM * MM))
 
-    ax_a1 = fig.add_axes([0.064, 0.635, 0.330, 0.318])
-    ax_a2 = fig.add_axes([0.432, 0.635, 0.152, 0.242])
-    ax_b = fig.add_axes([0.758, 0.602, 0.160, 0.348])
-    gs_c = gridspec.GridSpec(3, 5, figure=fig, left=0.064, right=0.982, bottom=0.058, top=0.484, wspace=0.35, hspace=0.58)
+    ax_a1 = fig.add_axes([0.064, 0.640, 0.330, 0.312])
+    ax_a2 = fig.add_axes([0.432, 0.640, 0.152, 0.238])
+    ax_b = fig.add_axes([0.758, 0.608, 0.160, 0.342])
+    gs_c = gridspec.GridSpec(3, 5, figure=fig, left=0.064, right=0.982, bottom=0.096, top=0.495, wspace=0.35, hspace=0.56)
 
     def glob_subsectors(scen_filter: pd.Series) -> tuple[dict[str, float], pd.Series]:
         sub = df_country[scen_filter].copy()
@@ -1278,13 +1404,13 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
         return by_m.mean().to_dict(), by_m["P_gj"]
 
     steps_a = [
-        ("Present", df_country["scenario_id"] == "R1__obs__2006_2025"),
-        ("2046–2065\nwarming", (df_country["group"] == "R1") & (df_country["ssp"] == "ssp245") & (df_country["window_id"] == "2046_2065")),
-        ("55/25 °C\n(vs 2025)", (df_country["group"] == "R4") & (df_country["subgroup"] == "S3_4gdh_standalone") & (df_country["window_id"] == "2046_2065")),
-        ("55/25 °C\n(vs 2050)", (df_country["group"] == "R4") & (df_country["subgroup"] == "S4_4gdh_symmetric") & (df_country["window_id"] == "2046_2065")),
-        ("Envelope\nretrofits", (df_country["group"] == "R4") & (df_country["subgroup"] == "S2_envelope_retrofit") & (df_country["window_id"] == "2046_2065")),
-        ("Fossil\nretirement", (df_country["group"] == "R4") & (df_country["subgroup"] == "S1_fossil_retire") & (df_country["window_id"] == "2046_2065")),
-        ("Combined\n2050", (df_country["group"] == "R4") & (df_country["subgroup"] == "S5_combined_all") & (df_country["window_id"] == "2046_2065")),
+        ("Present", df_country["scenario_id"] == "R1__obs__2006_2025", None),
+        ("2046–2065\nwarming", (df_country["group"] == "R1") & (df_country["ssp"] == "ssp245") & (df_country["window_id"] == "2046_2065"), None),
+        ("55/25 °C\n(vs 2025)", (df_country["group"] == "R4") & (df_country["subgroup"] == "S3_4gdh_standalone") & (df_country["window_id"] == "2046_2065"), "R4__S3_4gdh_standalone__obs__obsclim__2006_2025"),
+        ("55/25 °C\n(vs 2050)", (df_country["group"] == "R4") & (df_country["subgroup"] == "S4_4gdh_symmetric") & (df_country["window_id"] == "2046_2065"), "R4__S4_4gdh_symmetric__obs__obsclim__2006_2025"),
+        ("Envelope\nretrofits", (df_country["group"] == "R4") & (df_country["subgroup"] == "S2_envelope_retrofit") & (df_country["window_id"] == "2046_2065"), "R4__S2_envelope_retrofit__obs__obsclim__2006_2025"),
+        ("Fossil\nretirement", (df_country["group"] == "R4") & (df_country["subgroup"] == "S1_fossil_retire") & (df_country["window_id"] == "2046_2065"), "R4__S1_fossil_retire__obs__obsclim__2006_2025"),
+        ("Combined\n2050", (df_country["group"] == "R4") & (df_country["subgroup"] == "S5_combined_all") & (df_country["window_id"] == "2046_2065"), "R4__S5_combined_all__obs__obsclim__2006_2025"),
     ]
 
     sec_layers = [
@@ -1295,10 +1421,11 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
         ("chem_ww", "Chemicals, pulp & wastewater", F5_CHEM),
     ]
 
+    p0_present_ej = float(df_glob.loc[df_glob["scenario_id"] == "R1__obs__2006_2025", "P_ej_yr"].iloc[0])
     clean_ax(ax_a1, "y")
     bw = 0.60
     src_f5 = []
-    for xi, (slbl, sfilt) in enumerate(steps_a):
+    for xi, (slbl, sfilt, base_sid) in enumerate(steps_a):
         means, mod_tot = glob_subsectors(sfilt)
         bot = 0.0
         for col_k, _, hex_k in sec_layers:
@@ -1311,14 +1438,25 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
         if len(mod_tot) > 1:
             for m_id, tv in mod_tot.items():
                 ax_a1.scatter(xi, tv, facecolors="none", edgecolors="#000000", marker=GCM_MARKER[str(m_id)], s=8.5, linewidths=0.48, zorder=5)
-        y_lbl = max(bot, float(mod_tot.max())) + 0.09
-        if xi == 5:
-            ax_a1.text(xi, y_lbl, f"0.32\n({MINUS}88.1%)", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold", linespacing=1.05, zorder=6)
-        elif xi == 6:
-            ax_a1.text(xi, 0.50, f"{bot:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
+
+        p_2006_cfg = np.nan
+        if base_sid is not None:
+            p_2006_cfg = float(df_country.loc[df_country["scenario_id"] == base_sid, "P_gj"].sum() / 1e9)
+            ax_a1.scatter(xi, p_2006_cfg, facecolors="#FFFFFF", edgecolors="#000000", marker="h", s=22.0, linewidths=0.88, zorder=6.2)
+
+        top_ref = max(bot, float(mod_tot.max()), 0.0 if np.isnan(p_2006_cfg) else p_2006_cfg)
+        y_lbl = top_ref + 0.09
+        if xi == 6:
+            ax_a1.text(xi, max(0.50, y_lbl), f"{bot:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
         else:
             ax_a1.text(xi, y_lbl, f"{bot:.2f}", ha="center", va="bottom", fontsize=FS_COMPACT, fontweight="bold")
-        src_f5.append({"step": slbl.replace("\n", " "), "P_mean_ej": bot, "P_min_ej": float(mod_tot.min()), "P_max_ej": float(mod_tot.max())})
+        src_f5.append({
+            "step": slbl.replace("\n", " "),
+            "P_2006_2025_ej": float(bot) if xi == 0 else (p0_present_ej if xi == 1 else float(p_2006_cfg)),
+            "P_mean_ej": bot,
+            "P_min_ej": float(mod_tot.min()),
+            "P_max_ej": float(mod_tot.max()),
+        })
 
     ZOOM_F5 = 0.45
     zx0, zx1 = 6 - 0.40, 6 + 0.40
@@ -1332,7 +1470,8 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
     lock_spines_above_data(ax_a1)
 
     leg_f5 = [mpatches.Patch(facecolor=hx, edgecolor="none", label=lb) for _, lb, hx in sec_layers]
-    fig.legend(handles=leg_f5, loc="upper left", bbox_to_anchor=(0.328, 0.980), frameon=False, fontsize=FS_COMPACT, handlelength=0.95, handleheight=0.80, labelspacing=0.18)
+    leg_f5.append(mpl.lines.Line2D([], [], color="none", marker="h", markerfacecolor="#FFFFFF", markeredgecolor="#000000", markeredgewidth=0.88, ms=4.5, label="2006–2025 climate"))
+    fig.legend(handles=leg_f5, loc="upper left", bbox_to_anchor=(0.328, 0.988), frameon=False, fontsize=FS_COMPACT, handlelength=0.95, handleheight=0.78, labelspacing=0.14)
 
     ax_a2.spines["top"].set_visible(True)
     ax_a2.spines["top"].set_linewidth(0.50)
@@ -1346,9 +1485,14 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
     s5_sub = df_country[(df_country["group"] == "R4") & (df_country["subgroup"] == "S5_combined_all") & (df_country["window_id"] == "2046_2065")].copy()
     s5_sub["chem_ww"] = s5_sub["P_ethylene_gj"] + s5_sub["P_pulp_paper_gj"] + s5_sub["P_wastewater_gj"]
     s5_mod = s5_sub.groupby("model")[["P_steel_gj", "P_power_gj", "P_refining_gj", "P_cement_gj", "chem_ww"]].sum() / 1e6
+
+    s5_b0 = df_country[df_country["scenario_id"] == "R4__S5_combined_all__obs__obsclim__2006_2025"].copy()
+    s5_b0["chem_ww"] = s5_b0["P_ethylene_gj"] + s5_b0["P_pulp_paper_gj"] + s5_b0["P_wastewater_gj"]
+    s5_b0_sum = (s5_b0[["P_steel_gj", "P_power_gj", "P_refining_gj", "P_cement_gj", "chem_ww"]].sum() / 1e6).to_dict()
+
     z_specs = [
         ("Steel", "P_steel_gj", F5_STEEL),
-        ("Nuclear", "P_power_gj", F5_POWER),
+        ("Nuclear & bio.", "P_power_gj", F5_POWER),
         ("Refining", "P_refining_gj", F5_REFINING),
         ("Cement", "P_cement_gj", F5_CEMENT),
         ("Chem.", "chem_ww", F5_CHEM),
@@ -1357,29 +1501,40 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
     for xi2, (zlbl, zcol, zhex) in enumerate(z_specs):
         vals = s5_mod[zcol].to_numpy()
         mv = float(vals.mean())
+        b0_v = float(s5_b0_sum[zcol])
         ax_a2.bar(xi2, mv, width=0.58, color=zhex, edgecolor="none", zorder=3)
         for m_id, vm in s5_mod[zcol].items():
             ax_a2.scatter(xi2, vm, facecolors="none", edgecolors="#000000", marker=GCM_MARKER[str(m_id)], s=8, linewidths=0.45, zorder=4)
-        y_off = 8.5 if xi2 == 1 else (1.8 if xi2 == 2 else (9.5 if xi2 == 3 else 2.8))
-        ax_a2.text(xi2, max(mv, float(vals.max())) + y_off, f"{100*mv/tot_s5:.1f}%", ha="center", va="bottom", fontsize=FS_COMPACT)
+        ax_a2.scatter(xi2, b0_v, facecolors="#FFFFFF", edgecolors="#000000", marker="h", s=18.0, linewidths=0.82, zorder=6.2)
+        top_z = max(mv, float(vals.max()), b0_v)
+        y_off = 3.0 if xi2 == 0 else (18.0 if xi2 == 1 else (10.0 if xi2 == 2 else 2.5))
+        ax_a2.text(xi2, top_z + y_off, f"{100*mv/tot_s5:.1f}%", ha="center", va="bottom", fontsize=FS_COMPACT)
 
-    ax_a2.text(0.58, 0.95, f"{tot_s5:.1f} PJ\nfossil-free\ncore", transform=ax_a2.transAxes, ha="center", va="top", fontsize=FS_COMPACT, linespacing=1.10)
+    s5_b0_tot = float(sum(s5_b0_sum.values()))
+    dp_s5_pct = 100.0 * (tot_s5 - s5_b0_tot) / max(1e-9, s5_b0_tot)
+    cf_json_f5 = SCEN_DIR / "counterfactual_and_planning_summary.json"
+    if cf_json_f5.exists():
+        import json as _json
+        _cf5 = _json.loads(cf_json_f5.read_text(encoding="utf-8"))
+        dp_s5_pct = float(_cf5["PartA_R4_2050_Climate_Effects"]["S5_combined_all"]["decomp_vs_mod_2006_2025"]["dP_pct_mean"])
+    ymax_a2 = max(145.0, float(max(max(s5_mod[z[1]].max(), s5_b0_sum[z[1]]) for z in z_specs)) * 1.32)
+    ax_a2.text(0.60, 0.96, f"{tot_s5:.1f} PJ\n({fm(dp_s5_pct, '.1f')}% vs\n2006–25)", transform=ax_a2.transAxes, ha="center", va="top", fontsize=FS_COMPACT, linespacing=1.08)
     ax_a2.set_xlim(-0.72, 4.65)
-    ax_a2.set_ylim(0, 125)
+    ax_a2.set_ylim(0, ymax_a2)
     ax_a2.set_xticks(range(5))
     ax_a2.set_xticklabels([z[0] for z in z_specs], fontsize=FS_COMPACT, rotation=28, ha="right", linespacing=0.92)
-    ax_a2.set_yticks([0, 40, 80, 120])
+    ax_a2.set_yticks([0, 45, 90, 135])
     ax_a2.set_ylabel("Combined 2050 potential (PJ yr$^{-1}$)")
     lock_spines_above_data(ax_a2)
 
-    for yl, yr in [(ZOOM_F5, 125.0), (0.0, 0.0)]:
+    for yl, yr in [(ZOOM_F5, ymax_a2), (0.0, 0.0)]:
         fig.add_artist(ConnectionPatch(
             xyA=(zx1, yl), coordsA=ax_a1.transData,
             xyB=(-0.72, yr), coordsB=ax_a2.transData,
             linestyle="--", linewidth=0.50, color="#333333"
         ))
 
-    # --- Panel b: Shaded Range-Band Sensitivity Forest Plot + Right Tabular P0 Column ---
+    # --- Panel b: Shaded Range-Band Sensitivity Forest Plot + Right Tabular P0 Column (11 Full-Global 183-Region Specs!) ---
     ax_b.spines["top"].set_visible(False)
     ax_b.spines["left"].set_visible(False)
     ax_b.spines["right"].set_visible(False)
@@ -1391,6 +1546,7 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
     base = df_glob[df_glob["scenario_id"] == "R1__obs__2006_2025"].iloc[0]
     clim = df_glob[(df_glob["group"] == "R1") & (df_glob["ssp"] == "ssp245") & (df_glob["window_id"] == "2046_2065")]
     p0_v = float(base["P_ej_yr"])
+    central_dp = float(np.mean([100.0 * (float(r["P_ej_yr"]) - p0_v) / p0_v for _, r in clim.iterrows()]))
 
     rob_specs = [
         ("Central run", "CENTRAL"),
@@ -1402,39 +1558,39 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
         ("Prices \u221230%", "Rob3_price_minus30"),
         ("Prices +30%", "Rob3_price_plus30"),
         ("GHSL 2020 map", "Rob4_ghsl2020"),
-        ("Survey subset", "OFFICIAL_ONLY"),
+        ("CHP power loss", "Rob5_chp_power_loss"),
+        ("CHP fuel alloc.", "Rob6_chp_fuel_alloc"),
     ][::-1]
 
     yb_r = np.arange(len(rob_specs))
     ax_b.axvline(0.0, lw=0.65, color="#000000", zorder=18)
-    ax_b.axvline(-11.29, ls="--", lw=0.60, color="#000000", zorder=2)
-    ax_b.text(-11.29, len(rob_specs) - 0.35, f"{MINUS}11.3%", ha="center", va="bottom", fontsize=FS_COMPACT)
-    ax_b.text(8.5, len(rob_specs) - 0.35, "$P_0$\n(EJ yr$^{-1}$)", ha="right", va="bottom", fontsize=FS_COMPACT, linespacing=1.05)
+    ax_b.axvline(central_dp, ls="--", lw=0.60, color="#000000", zorder=2)
+    ax_b.text(central_dp - 1.0, len(rob_specs) - 0.30, f"{fm(central_dp, '.1f')}%", ha="right", va="bottom", fontsize=FS_COMPACT)
+    ax_b.text(17.5, len(rob_specs) - 0.30, "$P_0$\n(EJ yr$^{-1}$)", ha="right", va="bottom", fontsize=FS_COMPACT, linespacing=1.05)
 
+    xmin_b = -34.0
     for yi, (rlbl, rcode) in enumerate(rob_specs):
         if rcode == "CENTRAL":
-            bv, sub, col_p = p0_v, clim, "P_ej_yr"
-        elif rcode == "OFFICIAL_ONLY":
-            bv, sub, col_p = float(base["P_official_only_ej_yr"]), clim, "P_official_only_ej_yr"
+            bv, sub = p0_v, clim
         else:
             sr = df_glob[(df_glob["group"] == "Robustness") & (df_glob["subgroup"] == rcode)]
             bv = float(sr.loc[sr["window_id"] == "2006_2025", "P_ej_yr"].iloc[0])
             sub = sr[sr["window_id"] == "2046_2065"]
-            col_p = "P_ej_yr"
-        dps = [100.0 * (float(r[col_p]) - bv) / bv for _, r in sub.iterrows()]
+        dps = [100.0 * (float(r["P_ej_yr"]) - bv) / bv for _, r in sub.iterrows()]
         lo, hi, mv = float(min(dps)), float(max(dps)), float(np.mean(dps))
+        xmin_b = min(xmin_b, lo - 3.0)
         ax_b.barh(yi, hi - lo, left=lo, height=0.60, color=F5_BAND, alpha=0.84, edgecolor="none", zorder=1)
         ax_b.plot([mv, mv], [yi - 0.28, yi + 0.28], color="#000000", lw=1.25, zorder=4)
         for (_, r), dpv in zip(sub.iterrows(), dps):
-            ax_b.scatter(dpv, yi, facecolors="none", edgecolors="#000000", marker=GCM_MARKER[r["model"]], s=8.5, linewidths=0.48, zorder=3)
-        ax_b.text(8.5, yi, f"{bv:.2f}", ha="right", va="center", fontsize=FS_COMPACT)
+            ax_b.scatter(dpv, yi, facecolors="none", edgecolors="#000000", marker=GCM_MARKER[r["model"]], s=8.0, linewidths=0.46, zorder=3)
+        ax_b.text(17.5, yi, f"{bv:.2f}", ha="right", va="center", fontsize=FS_COMPACT)
 
     ax_b.set_yticks(yb_r)
     ax_b.set_yticklabels([x[0] for x in rob_specs], fontsize=FS_COMPACT)
-    ax_b.set_xlim(-34, 9.5)
-    ax_b.set_ylim(-0.6, len(rob_specs) - 0.3)
-    ax_b.set_xticks([-30, -20, -10, 0])
-    ax_b.set_xticklabels([f"{MINUS}30", f"{MINUS}20", f"{MINUS}10", "0"])
+    ax_b.set_xlim(xmin_b, 18.5)
+    ax_b.set_ylim(-0.6, len(rob_specs) - 0.25)
+    ax_b.set_xticks([-40, -20, 0])
+    ax_b.set_xticklabels([f"{MINUS}40", f"{MINUS}20", "0"])
     ax_b.set_xlabel("2046–2065 change (%)")
 
     # --- Panel c: Monumental Full-Width 5x3 = 15-Country Stacked-Bar Matrix (ZERO polylines, pure black headers!) ---
@@ -1489,7 +1645,7 @@ def build_figure_5(df_glob: pd.DataFrame, df_country: pd.DataFrame) -> dict:
         ax_m.set_xlim(-0.55, 4.55)
         ax_m.set_xticks(xs)
         if r_i == 2:
-            ax_m.set_xticklabels(["2025", "Warm", "55°C(25)", "55°C(50)", "Zero-\nfossil"], fontsize=FS_COMPACT, rotation=34, ha="right", linespacing=0.92)
+            ax_m.set_xticklabels(["2025", "2046–65", "55/25 °C (2025 HP)", "55/25 °C (2050 HP)", "Combined 2050"], fontsize=5.3, rotation=48, ha="right")
         else:
             ax_m.set_xticklabels([])
         ax_m.tick_params(axis="y", labelsize=FS_COMPACT, length=2.0)
@@ -1522,6 +1678,7 @@ def main() -> None:
     print("\n=== MAIN FIGURES 2–5 EXPORT SUMMARY ===")
     for a in audits:
         print(f"  {a['stem']}: {a['w_mm']:.2f}x{a['h_mm']:.2f} mm | {a['mb']:.2f} MB | {a['n_texts']} text objects | bbox touches = {len(a['overlaps'])}")
+        assert len(a["overlaps"]) == 0, f"Text bbox overlap detected in {a['stem']}: {a['overlaps']}"
 
 
 if __name__ == "__main__":

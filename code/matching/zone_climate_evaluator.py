@@ -26,7 +26,6 @@ from code.common.parameters import (
     INDIV_ASHP_2025,
     INDIV_ASHP_2050,
     INDIV_GAS_BOILER_2025,
-    INDIV_GAS_BOILER_2050,
     LTDH_NETWORK_CAPEX_MULTIPLIER,
     NATURAL_GAS_EF_TCO2_PER_GJ_LHV,
     USD_PER_EUR_2025,
@@ -41,7 +40,7 @@ DIST_LIFETIME_YR = 40.0
 def ashp_daily_cop(tas_c: np.ndarray, use_2050_indiv_tech: bool = False) -> np.ndarray:
   """Field-calibrated radiator-supply (55 C) apartment ASHP daily COP vs outdoor air temperature T [C].
 
-  Follows Brudermueller et al. (2025, Nat. Commun. 16, 2893) & Staffell et al. (2012, Energy Environ. Sci.),
+  Follows Brudermueller et al. (2025, Nat. Commun. 16, 2834) & Staffell et al. (2012, Energy Environ. Sci.),
   anchored to DEA Sheet 207 reference seasonal efficiency (2.98889 in 2025; 4.29333 in 2050).
   """
   base = np.clip(2.35 + 0.065 * tas_c + 0.00045 * (tas_c ** 2), 1.35, 4.80)
@@ -197,8 +196,9 @@ def evaluate_zones_and_global_demand(
     z_dmq[:, m - 1, :] = np.percentile(m_slice, q_probs, axis=0).T
 
   # 3. Equipment & network unit costs for each zone
+  # Note: S4/S5 2050 building counterfactual isolates 2050 ASHP progress (DEA Sheet 207) while holding gas boilers at 2025 spec.
   sub_sp = DH_SUBSTATION_2050 if use_2050_dh_tech else DH_SUBSTATION_2025
-  gb_sp = INDIV_GAS_BOILER_2050 if use_2050_indiv_tech else INDIV_GAS_BOILER_2025
+  gb_sp = INDIV_GAS_BOILER_2025
   hp_sp = INDIV_ASHP_2050 if use_2050_indiv_tech else INDIV_ASHP_2025
 
   a_dist = crf(discount_rate, DIST_LIFETIME_YR)
@@ -239,9 +239,14 @@ def evaluate_zones_and_global_demand(
     c_net_usd_gj = (a_dist * dist_cap_usd + dist_fom_usd + a_sub * sub_cap_usd + sub_fom_usd + sub_el_usd) / ann_gj
 
     # Counterfactual Option B: Weather-compensated Apartment ASHP (DEA Sheet 207)
-    hp_cap_usd = hp_sp.capex_eur_per_mw_h * peak_mw * USD_PER_EUR_2025 * cap_eq
-    hp_fom_usd = hp_sp.fixed_om_eur_per_mw_h_yr * peak_mw * USD_PER_EUR_2025 * cap_eq
-    hp_el_mwh = (float(z_ashp_el_gj_yr[idx_z]) / GJ_PER_MWH) + (hp_sp.aux_elec_mwh_per_mw_h_yr * peak_mw)
+    # Allocate reversible space-conditioning capacity between heating and cooling by HDD14 / (HDD14 + CDD18),
+    # while dedicating full continuous water-heating capacity (dhw_mw) to heating.
+    dhw_mw = (float(zrow.volume_m3) * float(rp["w_c_gj_per_m3_day"])) / GJ_PER_MW_DAY
+    f_sh = float(getattr(zrow, "f_space_heat_dd", 1.0))
+    hp_eff_mw = min(peak_mw, dhw_mw) + f_sh * max(0.0, peak_mw - dhw_mw)
+    hp_cap_usd = hp_sp.capex_eur_per_mw_h * hp_eff_mw * USD_PER_EUR_2025 * cap_eq
+    hp_fom_usd = hp_sp.fixed_om_eur_per_mw_h_yr * hp_eff_mw * USD_PER_EUR_2025 * cap_eq
+    hp_el_mwh = (float(z_ashp_el_gj_yr[idx_z]) / GJ_PER_MWH) + (hp_sp.aux_elec_mwh_per_mw_h_yr * hp_eff_mw)
     c_ashp_usd_gj = (a_hp * hp_cap_usd + hp_fom_usd + hp_el_mwh * p_el) / ann_gj
     co2_ashp_t_gj = (hp_el_mwh * grid_ef) / ann_gj
 
@@ -277,6 +282,7 @@ def evaluate_zones_and_global_demand(
         "cap_scale_civil": cap_civ,
         "cap_scale_equip": cap_eq,
         "dist_sub_capex_usd_full": float(dist_cap_usd + sub_cap_usd),
+        "dist_sub_fom_el_usd_full": float(dist_fom_usd + sub_fom_usd + sub_el_usd),
     }
     zone_dmq_dict[zid] = z_dmq[idx_z]
 

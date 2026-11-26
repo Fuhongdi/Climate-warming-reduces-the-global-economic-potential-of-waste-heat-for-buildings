@@ -1,7 +1,8 @@
-"""Run all 190 global historical, SSP projection, warming-level, 2050 transition and sensitivity experiments."""
+"""Run all 202 global historical, SSP projection, warming-level, 2050 transition and sensitivity experiments."""
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import ctypes
 from dataclasses import asdict, dataclass
 import gc
 import io
@@ -9,12 +10,14 @@ import json
 import multiprocessing as mp
 import os
 from pathlib import Path
+import sys
 import tarfile
 import time
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "65536")
 
 import numpy as np
 import pandas as pd
@@ -41,7 +44,6 @@ from code.common.parameters import (
     INDIV_ASHP_2025,
     INDIV_ASHP_2050,
     INDIV_GAS_BOILER_2025,
-    INDIV_GAS_BOILER_2050,
     LTDH_NETWORK_CAPEX_MULTIPLIER,
     NATURAL_GAS_EF_TCO2_PER_GJ_LHV,
     USD_PER_EUR_2025,
@@ -61,8 +63,48 @@ from code.matching.zone_climate_evaluator import (
     load_window_daily_climate,
 )
 
-N_CLIMATE_WORKERS = 16
-N_SOLVER_WORKERS = 96
+N_CLIMATE_WORKERS = 4
+N_SOLVER_WORKERS = 4
+
+
+def _trim_memory() -> None:
+  gc.collect()
+  if sys.platform.startswith("linux"):
+    try:
+      ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+      pass
+
+
+def _process_tree_rss_gb() -> float:
+  """Measure total physical RSS (GiB) across parent + all child processes on Linux."""
+  if not sys.platform.startswith("linux"):
+    return 0.0
+  pids = {os.getpid()}
+  frontier = [os.getpid()]
+  while frontier:
+    p = frontier.pop()
+    try:
+      for tdir in Path(f"/proc/{p}/task").iterdir():
+        cfile = tdir / "children"
+        if cfile.exists():
+          for tok in cfile.read_text().split():
+            cp = int(tok)
+            if cp not in pids:
+              pids.add(cp)
+              frontier.append(cp)
+    except Exception:
+      pass
+  tot_kb = 0
+  for p in pids:
+    try:
+      for ln in Path(f"/proc/{p}/status").read_text().splitlines():
+        if ln.startswith("VmRSS:"):
+          tot_kb += int(ln.split()[1])
+          break
+    except Exception:
+      pass
+  return tot_kb / (1024.0 * 1024.0)
 
 
 @dataclass(frozen=True)
@@ -87,6 +129,7 @@ class ScenarioSpec:
   discount_rate: float = DISCOUNT_RATE_CENTRAL
   use_retail_prices: bool = False
   price_multiplier: float = 1.0
+  chp_mode: str = "residual"
   save_zone_table: bool = False
   save_selected_links: bool = False
 
@@ -226,10 +269,11 @@ def build_all_scenarios() -> list[ScenarioSpec]:
           window_id=w_id,
           start_year=y0,
           end_year=y1,
+          save_selected_links=(v_name == "S5_combined_all" and mod != "obs"),
           **v_kw,
       ))
 
-  # 5. Five Robustness Suites (8 parameter variants x 6 windows = 48 solver runs + Rob5 official_enduse subset = 55+)
+  # 5. Global Parameter & CHP Accounting Robustness Suites (10 parameter variants x 6 windows = 60 solver runs)
   rob_variants = [
       ("Rob1_bait12c", dict(bait_threshold_c=BAIT_THRESHOLD_LOW_C)),
       ("Rob1_bait16c", dict(bait_threshold_c=BAIT_THRESHOLD_HIGH_C)),
@@ -239,6 +283,8 @@ def build_all_scenarios() -> list[ScenarioSpec]:
       ("Rob3_price_minus30", dict(price_multiplier=0.70)),
       ("Rob3_price_plus30", dict(price_multiplier=1.30)),
       ("Rob4_ghsl2020", dict(ghsl_epoch=2020)),
+      ("Rob5_chp_power_loss", dict(chp_mode="power_loss_015")),
+      ("Rob6_chp_fuel_alloc", dict(chp_mode="fuel_alloc")),
   ]
   for r_name, r_kw in rob_variants:
     for run_id, mod, ssp, w_id, y0, y1 in core_6_targets:
@@ -397,31 +443,47 @@ def _compute_one_clim_projection(task: dict[str, object]) -> str:
 _SOLV_INIT: dict[str, object] = {}
 
 
+def _load_epoch_tables(sub: str, reg_valid: pd.DataFrame, df_sources: pd.DataFrame) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+  sdir = DATA_PROCESSED / sub
+  z_cols = [
+      "zone_id", "iso3", "region_id", "volume_m3", "lambda_dist_3gdh",
+      "persson_dist_capex_eur2025", "persson_dist_fom_eur2025_yr", "f_space_heat_dd",
+  ]
+  df_z_all = pd.read_parquet(sdir / "urban_heat_zones.parquet")
+  keep_z = [c for c in z_cols if c in df_z_all.columns]
+  df_z = df_z_all[df_z_all["region_id"].isin(reg_valid.index)][keep_z].reset_index(drop=True)
+  del df_z_all
+  valid_zset = set(df_z["zone_id"])
+
+  df_c_all = pd.read_parquet(sdir / "candidates_2025.parquet")
+  df_c = df_c_all[df_c_all["zone_id"].isin(valid_zset)].reset_index(drop=True)
+  del df_c_all
+  df_c = df_c.merge(df_sources[["stream_id", "subsector_detail"]], on="stream_id", how="left")
+  z_by_iso = {iso: g.reset_index(drop=True) for iso, g in df_z.groupby("iso3")}
+  c_by_iso = {iso: g.reset_index(drop=True) for iso, g in df_c.groupby("iso3")}
+  del df_z, df_c
+  return z_by_iso, c_by_iso
+
+
 def _init_solver_worker() -> None:
+  if "src_by_iso" in _SOLV_INIT:
+    _SOLV_INIT["clim_lru"] = {}
+    return
   df_sources = pd.read_parquet(DATA_PROCESSED / "sources_2025/sources_2025_streams.parquet")
   df_rp = pd.read_parquet(DATA_PROCESSED / "sinks_2025/calibrated_region_parameters_2025.parquet")
   reg_valid = df_rp[df_rp["valid_for_study"]].copy().set_index("region_id")
 
-  # Pre-index sources by iso3
   src_by_iso = {iso: g.reset_index(drop=True) for iso, g in df_sources.groupby("iso3")}
+  # Keep ONLY 2025 tables resident; 2020 robustness epoch (6 runs) loads on demand and frees immediately!
+  epoch_data = {2025: _load_epoch_tables("sinks_2025", reg_valid, df_sources)}
 
-  # Pre-index zones & candidates by (epoch, iso3)
-  epoch_data = {}
-  for ep, sub in [(2025, "sinks_2025"), (2020, "sinks_2020_robustness")]:
-    sdir = DATA_PROCESSED / sub
-    df_z = pd.read_parquet(sdir / "urban_heat_zones.parquet")
-    df_z = df_z[df_z["region_id"].isin(reg_valid.index)].reset_index(drop=True)
-    df_c = pd.read_parquet(sdir / "candidates_2025.parquet")
-    valid_zset = set(df_z["zone_id"])
-    df_c = df_c[df_c["zone_id"].isin(valid_zset)].reset_index(drop=True)
-    z_by_iso = {iso: g.reset_index(drop=True) for iso, g in df_z.groupby("iso3")}
-    c_by_iso = {iso: g.reset_index(drop=True) for iso, g in df_c.groupby("iso3")}
-    epoch_data[ep] = (z_by_iso, c_by_iso)
-
+  _SOLV_INIT["df_sources_min"] = df_sources[["stream_id", "subsector_detail"]].copy()
   _SOLV_INIT["src_by_iso"] = src_by_iso
   _SOLV_INIT["reg_valid"] = reg_valid
   _SOLV_INIT["epoch_data"] = epoch_data
-  _SOLV_INIT["clim_lru"] = {}  # tiny 2-entry LRU per worker
+  _SOLV_INIT["clim_lru"] = {}
+  del df_sources, df_rp
+  _trim_memory()
 
 
 def _get_country_clim_slice(clim_npz_path: str, iso3: str) -> tuple[dict[str, tuple[float, float, float, float]], dict[str, np.ndarray]]:
@@ -488,7 +550,7 @@ def _build_country_zone_meta(
     use_2050_grid_ef: bool,
 ) -> dict[str, dict[str, float]]:
   sub_sp = DH_SUBSTATION_2050 if use_2050_dh_tech else DH_SUBSTATION_2025
-  gb_sp = INDIV_GAS_BOILER_2050 if use_2050_indiv_tech else INDIV_GAS_BOILER_2025
+  gb_sp = INDIV_GAS_BOILER_2025
   hp_sp = INDIV_ASHP_2050 if use_2050_indiv_tech else INDIV_ASHP_2025
 
   a_dist = crf(discount_rate, DIST_LIFETIME_YR)
@@ -529,9 +591,12 @@ def _build_country_zone_meta(
     c_net_usd_gj = (a_dist * dist_cap_usd + dist_fom_usd + a_sub * sub_cap_usd + sub_fom_usd + sub_el_usd) / ann_gj
 
     ashp_el_gj = el50 if use_2050_indiv_tech else el25
-    hp_cap_usd = hp_sp.capex_eur_per_mw_h * peak_mw * USD_PER_EUR_2025 * cap_eq
-    hp_fom_usd = hp_sp.fixed_om_eur_per_mw_h_yr * peak_mw * USD_PER_EUR_2025 * cap_eq
-    hp_el_mwh = (ashp_el_gj / GJ_PER_MWH) + (hp_sp.aux_elec_mwh_per_mw_h_yr * peak_mw)
+    dhw_mw = (float(zrow.volume_m3) * float(rp["w_c_gj_per_m3_day"])) / GJ_PER_MW_DAY
+    f_sh = float(getattr(zrow, "f_space_heat_dd", 1.0))
+    hp_eff_mw = min(peak_mw, dhw_mw) + f_sh * max(0.0, peak_mw - dhw_mw)
+    hp_cap_usd = hp_sp.capex_eur_per_mw_h * hp_eff_mw * USD_PER_EUR_2025 * cap_eq
+    hp_fom_usd = hp_sp.fixed_om_eur_per_mw_h_yr * hp_eff_mw * USD_PER_EUR_2025 * cap_eq
+    hp_el_mwh = (ashp_el_gj / GJ_PER_MWH) + (hp_sp.aux_elec_mwh_per_mw_h_yr * hp_eff_mw)
     c_ashp_usd_gj = (a_hp * hp_cap_usd + hp_fom_usd + hp_el_mwh * p_el) / ann_gj
     co2_ashp_t_gj = (hp_el_mwh * grid_ef) / ann_gj
 
@@ -566,6 +631,7 @@ def _build_country_zone_meta(
         "cap_scale_civil": cap_civ,
         "cap_scale_equip": cap_eq,
         "dist_sub_capex_usd_full": float(dist_cap_usd + sub_cap_usd),
+        "dist_sub_fom_el_usd_full": float(dist_fom_usd + sub_fom_usd + sub_el_usd),
     }
   return zone_meta
 
@@ -707,6 +773,7 @@ def _solve_p_country_task(task: dict[str, object]) -> dict[str, object]:
       is_4gdh=scen.is_4gdh,
       use_2050_dh_tech=scen.use_2050_dh_tech,
       price_multiplier=scen.price_multiplier,
+      chp_mode=scen.chp_mode,
   )
   selected, P_gj = solve_country_celf(df_c_iso, q_init, z_dmq, zm_iso, cfg)
 
@@ -759,6 +826,130 @@ def _solve_p_country_task(task: dict[str, object]) -> dict[str, object]:
       "zone_D_gj": ({z: zm_iso[z]["ann_gj"] for z in zm_iso} if scen.save_zone_table else {}),
       "selected_links": (selected if scen.save_selected_links else []),
   }
+
+
+def _solve_full_scenario_task(task: dict[str, object]) -> tuple[str, float, float, float]:
+  """Solve all 183 countries for a single ScenarioSpec, loading its .npz once and freeing memory immediately."""
+  sc: ScenarioSpec = task["scen"]  # type: ignore[assignment]
+  all_study_isos: list[str] = task["all_study_isos"]  # type: ignore[assignment]
+  official_isos: set[str] = task["official_isos"]  # type: ignore[assignment]
+  u_iso_map: dict[str, float] = task["u_iso_map"]  # type: ignore[assignment]
+  d_iso_map: dict[str, float] = task["d_iso_map"]  # type: ignore[assignment]
+  clim_npz_path = str(task["clim_npz_path"])
+  out_dir = Path(str(task["out_dir"]))
+  scen_dir = Path(str(task["scen_dir"]))
+  u_dir = Path(str(task["u_dir"]))
+  z_out_dir = Path(str(task["z_out_dir"]))
+
+  ep_dict: dict[int, tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]] = _SOLV_INIT["epoch_data"]  # type: ignore[assignment]
+  loaded_2020_temp = False
+  if sc.ghsl_epoch not in ep_dict:
+    ep_dict[2020] = _load_epoch_tables(
+        "sinks_2020_robustness",
+        _SOLV_INIT["reg_valid"],        # type: ignore[arg-type]
+        _SOLV_INIT["df_sources_min"],   # type: ignore[arg-type]
+    )
+    loaded_2020_temp = True
+
+  sid = sc.scenario_id
+  c_rows = []
+  all_sel_links = []
+  z_p_all: dict[str, float] = {}
+  z_d_all: dict[str, float] = {}
+
+  try:
+    for iso in all_study_isos:
+      cr = _solve_p_country_task({
+          "scen": sc,
+          "iso3": iso,
+          "clim_npz_path": clim_npz_path,
+      })
+      q_gj = float(cr["Q_gj"])
+      u_gj = float(u_iso_map.get(iso, 0.0))
+      p_gj = float(cr["P_gj"])
+      assert u_gj <= q_gj * 1.001 + 10.0, (
+          f"Upper bound U exceeded Q in {sid} {iso}: U={u_gj}, Q={q_gj}"
+      )
+      assert p_gj <= u_gj * 1.0005 + 10.0, (
+          f"Economic P exceeded physical LP U in {sid} {iso}: P={p_gj}, U={u_gj}"
+      )
+      u_gj_clean = min(q_gj, u_gj)
+      p_gj = min(p_gj, u_gj_clean)
+      c_rows.append({
+          "scenario_id": sid,
+          "group": sc.group,
+          "subgroup": sc.subgroup,
+          "model": sc.model,
+          "ssp": sc.ssp,
+          "window_id": sc.window_id,
+          "start_year": sc.start_year,
+          "end_year": sc.end_year,
+          "iso3": iso,
+          "official_enduse_country": iso in official_isos,
+          "Q_gj": q_gj,
+          "D_total_gj": float(d_iso_map.get(iso, 0.0)),
+          "D_urban_gj": float(cr["D_urban_gj"]),
+          "U_gj": u_gj_clean,
+          "P_gj": p_gj,
+          "H_deliv_gj": float(cr["H_deliv_gj"]),
+          "H_peaking_gj": float(cr["H_peaking_gj"]),
+          "net_benefit_usd": float(cr["net_benefit_usd"]),
+          "tot_dh_cost_usd": float(cr["tot_dh_cost_usd"]),
+          "avoided_ind_cost_usd": float(cr["avoided_ind_cost_usd"]),
+          "total_capex_usd": float(cr["total_capex_usd"]),
+          "co2_abated_t": float(cr["co2_abated_t"]),
+          "n_selected_links": int(cr["n_selected_links"]),
+          "P_power_gj": float(cr["P_by_sector"].get("power", 0.0)),
+          "P_steel_gj": float(cr["P_by_sector"].get("steel", 0.0)),
+          "P_cement_gj": float(cr["P_by_sector"].get("cement", 0.0)),
+          "P_refining_gj": float(cr["P_by_sector"].get("refining", 0.0)),
+          "P_ethylene_gj": float(cr["P_by_sector"].get("ethylene", 0.0)),
+          "P_pulp_paper_gj": float(cr["P_by_sector"].get("pulp_paper", 0.0)),
+          "P_wastewater_gj": float(cr["P_by_sector"].get("wastewater", 0.0)),
+          "P_direct_hex_gj": float(cr["P_by_upgrade"].get("direct_hex", 0.0)),
+          "P_hp_ind_power_gj": float(cr["P_by_upgrade"].get("hp_ind_power", 0.0)),
+          "P_hp_wastewater_gj": float(cr["P_by_upgrade"].get("hp_wastewater", 0.0)),
+      })
+      if sc.save_selected_links and cr["selected_links"]:
+        all_sel_links.extend(cr["selected_links"])  # type: ignore[arg-type]
+      if sc.save_zone_table:
+        z_p_all.update(cr["zone_P_gj"])  # type: ignore[arg-type]
+        z_d_all.update(cr["zone_D_gj"])  # type: ignore[arg-type]
+
+    df_c_out = pd.DataFrame(c_rows)
+    tmp_pq = scen_dir / f"{sid}_countries.tmp.parquet"
+    df_c_out.to_parquet(tmp_pq, index=False)
+    tmp_pq.replace(scen_dir / f"{sid}_countries.parquet")
+
+    if sc.save_selected_links and all_sel_links:
+      pd.DataFrame(all_sel_links).to_parquet(out_dir / f"{sid}_selected_links.parquet", index=False)
+
+    if sc.save_zone_table:
+      uz_path = u_dir / f"{sc.u_key}_zones.parquet"
+      uz_map = {}
+      if uz_path.exists():
+        df_uz = pd.read_parquet(uz_path)
+        uz_map = dict(zip(df_uz["zone_id"], df_uz["U_gj"]))
+      z_rows = [
+          {
+              "zone_id": zk,
+              "D_gj": zd_v,
+              "U_gj": max(z_p_all.get(zk, 0.0), float(uz_map.get(zk, 0.0))),
+              "P_gj": float(z_p_all.get(zk, 0.0)),
+          }
+          for zk, zd_v in z_d_all.items()
+      ]
+      pd.DataFrame(z_rows).to_parquet(z_out_dir / f"{sid}_zones.parquet", index=False)
+
+    p_ej = float(df_c_out["P_gj"].sum() / 1e9)
+    u_ej = float(df_c_out["U_gj"].sum() / 1e9)
+    d_ej = float(df_c_out["D_total_gj"].sum() / 1e9)
+    return sid, p_ej, u_ej, d_ej
+  finally:
+    if loaded_2020_temp and 2020 in ep_dict:
+      del ep_dict[2020]
+    _SOLV_INIT["clim_lru"].clear()  # type: ignore[union-attr]
+    _trim_memory()
 
 
 def compute_r2_decomposition(
@@ -909,33 +1100,89 @@ def compute_r2_decomposition(
     assert z_resid < 1e-10, f"Zone Eq. 6 residual {z_resid}"
     z_pos.to_parquet(r2_dir / "r2_zone_midcentury_ssp245_ensmean.parquet", index=False)
 
-    # Empirical stratification by latitude band & urban size tier
-    z_pos["abs_lat_band"] = pd.cut(
-        z_pos["lat"].abs(),
+    # Empirical stratification by latitude band & urban size tier:
+    # Computed strictly per GCM m=1..5 against each model's own 2006-2025 baseline, then averaged across the 5 GCMs!
+    z_meta_cuts = df_zones_meta[["zone_id", "lat", "baseline_mean_mw"]].copy()
+    z_meta_cuts["abs_lat_band"] = pd.cut(
+        z_meta_cuts["lat"].abs(),
         bins=[0.0, 30.0, 40.0, 50.0, 60.0, 90.0],
         labels=["<30 deg", "30-40 deg", "40-50 deg", "50-60 deg", ">60 deg"],
     )
-    z_pos["size_tier"] = pd.cut(
-        z_pos["baseline_mean_mw"],
+    z_meta_cuts["size_tier"] = pd.cut(
+        z_meta_cuts["baseline_mean_mw"],
         bins=[0.0, 10.0, 100.0, 1e9],
         labels=["Small (1-10 MW)", "Medium (10-100 MW)", "Large (>100 MW)"],
     )
+    z_all_cuts = z_all.merge(z_meta_cuts[["zone_id", "abs_lat_band", "size_tier"]], on="zone_id", how="left")
+
+    per_mod_strat_rows = []
     for col_s in ["abs_lat_band", "size_tier"]:
-      grp = z_pos.groupby(col_s, observed=False)[
+      grp_m = z_all_cuts.groupby(["model", col_s], observed=False)[
           ["D0_gj", "D1_gj", "U0_gj", "U1_gj", "P0_gj", "P1_gj"]
       ].sum().reset_index()
-      grp["P0_pj"] = grp["P0_gj"] / 1e6
-      grp["P1_pj"] = grp["P1_gj"] / 1e6
-      grp["dP_rel_pct"] = 100.0 * (grp["P1_gj"] - grp["P0_gj"]) / np.maximum(1.0, grp["P0_gj"])
-      grp["term1_demand_shift_pct"] = 100.0 * (grp["D1_gj"] - grp["D0_gj"]) / np.maximum(1.0, grp["D0_gj"])
-      grp["term2_seasonal_mismatch_pct"] = (
-          100.0 * (grp["U1_gj"] - grp["U0_gj"]) / np.maximum(1.0, grp["U0_gj"]) - grp["term1_demand_shift_pct"]
+      grp_m["P0_pj"] = grp_m["P0_gj"] / 1e6
+      grp_m["P1_pj"] = grp_m["P1_gj"] / 1e6
+      valid_m = (grp_m["P0_gj"] > 0.0) & (grp_m["U0_gj"] > 0.0) & (grp_m["D0_gj"] > 0.0)
+      grp_m["dP_rel_pct"] = np.where(valid_m, 100.0 * (grp_m["P1_gj"] - grp_m["P0_gj"]) / np.maximum(1.0, grp_m["P0_gj"]), 0.0)
+      grp_m["term1_demand_shift_pct"] = np.where(valid_m, 100.0 * (grp_m["D1_gj"] - grp_m["D0_gj"]) / np.maximum(1.0, grp_m["D0_gj"]), 0.0)
+      grp_m["term2_seasonal_mismatch_pct"] = np.where(
+          valid_m,
+          100.0 * (grp_m["U1_gj"] - grp_m["U0_gj"]) / np.maximum(1.0, grp_m["U0_gj"]) - grp_m["term1_demand_shift_pct"],
+          0.0,
       )
-      grp["term3_cost_exit_pct"] = (
-          grp["dP_rel_pct"] - 100.0 * (grp["U1_gj"] - grp["U0_gj"]) / np.maximum(1.0, grp["U0_gj"])
+      grp_m["term3_cost_exit_pct"] = np.where(
+          valid_m,
+          grp_m["dP_rel_pct"] - 100.0 * (grp_m["U1_gj"] - grp_m["U0_gj"]) / np.maximum(1.0, grp_m["U0_gj"]),
+          0.0,
       )
+      for r_pm in grp_m.to_dict("records"):
+        per_mod_strat_rows.append({
+            "stratum_type": col_s,
+            "stratum": str(r_pm[col_s]),
+            "model": str(r_pm["model"]),
+            "P0_pj": float(r_pm["P0_pj"]),
+            "P1_pj": float(r_pm["P1_pj"]),
+            "dP_rel_pct": float(r_pm["dP_rel_pct"]),
+            "term1_demand_shift_pct": float(r_pm["term1_demand_shift_pct"]),
+            "term2_seasonal_mismatch_pct": float(r_pm["term2_seasonal_mismatch_pct"]),
+            "term3_cost_exit_pct": float(r_pm["term3_cost_exit_pct"]),
+        })
+
+      # 5-GCM mean of per-model exact decompositions (preserves zero identity residual identically!)
+      grp = grp_m.groupby(col_s, observed=False).agg(
+          D0_gj=("D0_gj", "mean"),
+          D1_gj=("D1_gj", "mean"),
+          U0_gj=("U0_gj", "mean"),
+          U1_gj=("U1_gj", "mean"),
+          P0_gj=("P0_gj", "mean"),
+          P1_gj=("P1_gj", "mean"),
+          P0_pj=("P0_pj", "mean"),
+          P1_pj=("P1_pj", "mean"),
+          dP_rel_pct=("dP_rel_pct", "mean"),
+          dP_min_pct=("dP_rel_pct", "min"),
+          dP_max_pct=("dP_rel_pct", "max"),
+          term1_demand_shift_pct=("term1_demand_shift_pct", "mean"),
+          term2_seasonal_mismatch_pct=("term2_seasonal_mismatch_pct", "mean"),
+          term3_cost_exit_pct=("term3_cost_exit_pct", "mean"),
+      ).reset_index()
+      strat_resid = float(np.max(np.abs(
+          grp["dP_rel_pct"]
+          - (grp["term1_demand_shift_pct"] + grp["term2_seasonal_mismatch_pct"] + grp["term3_cost_exit_pct"])
+      )))
+      assert strat_resid < 1e-11, f"Per-GCM stratified residual {strat_resid}"
       grp.to_csv(r2_dir / f"r2_stratified_by_{col_s}.csv", index=False)
-      z_strat_summary[col_s] = grp[[col_s, "P0_pj", "P1_pj", "dP_rel_pct", "term1_demand_shift_pct", "term2_seasonal_mismatch_pct", "term3_cost_exit_pct"]].to_dict("records")
+      z_strat_summary[col_s] = grp[[
+          col_s, "P0_pj", "P1_pj", "dP_rel_pct", "dP_min_pct", "dP_max_pct",
+          "term1_demand_shift_pct", "term2_seasonal_mismatch_pct", "term3_cost_exit_pct"
+      ]].to_dict("records")
+
+    pd.DataFrame(per_mod_strat_rows).to_csv(r2_dir / "r2_stratified_by_model_all.csv", index=False)
+
+    obs_z_path = z_dir / "R1__obs__2006_2025_zones.parquet"
+    if obs_z_path.exists():
+      df_obs_z = pd.read_parquet(obs_z_path)
+      z_strat_summary["n_viable_zones_obs_2006_2025"] = int((df_obs_z["P_gj"] > 0.0).sum())
+    z_strat_summary["n_viable_zones_5gcm_union_2006_2025"] = int(len(z_pos))
 
   return {"max_identity_residual": max_residual, "zone_stratification": z_strat_summary}
 
@@ -990,12 +1237,17 @@ def run_r3_locked_assets(
 
   zm_base_obs, _ = _load_full_zm_dmq("gswp3-era5__obsclim__2006_2025__e2025__b14__ret0")
 
+  pv_20 = (1.0 - (1.0 + DISCOUNT_RATE_CENTRAL) ** (-20)) / DISCOUNT_RATE_CENTRAL
+  pv_40 = (1.0 - (1.0 + DISCOUNT_RATE_CENTRAL) ** (-40)) / DISCOUNT_RATE_CENTRAL
+  pv_near = pv_20
+  pv_mid = pv_40 - pv_20
+
   summary_rows = []
   for mod in ISIMIP3B_MODELS:
+    mod_dfs: dict[str, pd.DataFrame] = {}
     for win_id in ("2026_2045", "2046_2065"):
       ck = f"{mod}__ssp245__{win_id}__e2025__b14__ret0"
       zm_fut, dmq_fut = _load_full_zm_dmq(ck)
-      # Preserve country-by-country baseline selection order
       df_res = evaluate_locked_portfolio(
           df_locked_links=df_locked_links,
           q_init_m_gj_d=q_init_all,
@@ -1004,15 +1256,41 @@ def run_r3_locked_assets(
           zone_meta_base=zm_base_obs,
           discount_rate=DISCOUNT_RATE_CENTRAL,
       )
+      mod_dfs[win_id] = df_res
+
+    # Compute exact 40-year (2026-2065) discounted NPV per network (at 7% real discount rate)
+    df_near = mod_dfs["2026_2045"]
+    df_mid = mod_dfs["2046_2065"].copy()
+    nb_near_arr = df_near["net_benefit_fut_usd_yr"].to_numpy(dtype=np.float64)
+    nb_mid_arr = df_mid["net_benefit_fut_usd_yr"].to_numpy(dtype=np.float64)
+    npv_40yr_arr = pv_near * nb_near_arr + pv_mid * nb_mid_arr
+    cum_40yr_arr = 20.0 * nb_near_arr + 20.0 * nb_mid_arr
+
+    df_mid["net_benefit_near_2026_2045_usd_yr"] = nb_near_arr
+    df_mid["npv_40yr_7pct_usd"] = npv_40yr_arr
+    df_mid["cum_40yr_undisc_usd"] = cum_40yr_arr
+    df_mid["is_lifetime_npv_neg"] = npv_40yr_arr < 0.0
+    mod_dfs["2046_2065"] = df_mid
+
+    for win_id in ("2026_2045", "2046_2065"):
+      df_res = mod_dfs[win_id]
       run_tag = f"R3__{mod}__ssp245__{win_id}"
       df_res.to_parquet(r3_dir / f"{run_tag}_links.parquet", index=False)
 
       tot_links = len(df_res)
       loss_mask = df_res["is_loss_making_fut"]
+      op_loss_mask = df_res["is_operating_loss_fut"]
+      npv_neg_mask = df_res["is_lifetime_npv_neg"] if "is_lifetime_npv_neg" in df_res.columns else pd.Series(False, index=df_res.index)
+
       tot_capex_busd = float(df_res["total_sunk_capex_usd"].sum() / 1e9)
       loss_capex_busd = float(df_res.loc[loss_mask, "total_sunk_capex_usd"].sum() / 1e9)
+      op_loss_capex_busd = float(df_res.loc[op_loss_mask, "total_sunk_capex_usd"].sum() / 1e9)
+      npv_neg_capex_busd = float(df_res.loc[npv_neg_mask, "total_sunk_capex_usd"].sum() / 1e9)
+
       d0_tot = float(df_res["sub_D_0_gj_yr"].sum())
       df_tot = float(df_res["sub_D_fut_gj_yr"].sum())
+      w_cind_0 = float((df_res["c_ind_0_usd_per_gj"] * df_res["sub_D_0_gj_yr"]).sum() / max(1.0, d0_tot))
+      w_cind_f = float((df_res["c_ind_fut_usd_per_gj"] * df_res["sub_D_fut_gj_yr"]).sum() / max(1.0, df_tot))
       w_lcoh_0 = float((df_res["lcoh_0_usd_per_gj"] * df_res["sub_D_0_gj_yr"]).sum() / max(1.0, d0_tot))
       w_lcoh_f = float((df_res["lcoh_fut_usd_per_gj"] * df_res["sub_D_fut_gj_yr"]).sum() / max(1.0, df_tot))
 
@@ -1027,14 +1305,24 @@ def run_r3_locked_assets(
           "total_locked_capex_billion_usd": tot_capex_busd,
           "loss_making_capex_billion_usd": loss_capex_busd,
           "loss_making_capex_share_pct": 100.0 * loss_capex_busd / max(1e-9, tot_capex_busd),
+          "n_lifetime_npv_neg_links": int(npv_neg_mask.sum()),
+          "lifetime_npv_neg_share_pct": 100.0 * float(npv_neg_mask.mean()) if tot_links > 0 else 0.0,
+          "lifetime_npv_neg_capex_billion_usd": npv_neg_capex_busd,
+          "n_operating_loss_links": int(op_loss_mask.sum()),
+          "operating_loss_capex_billion_usd": op_loss_capex_busd,
           "P_0_ej_yr": float(df_res["P_0_gj_yr"].sum() / 1e9),
           "P_locked_fut_ej_yr": float(df_res["P_fut_gj_yr"].sum() / 1e9),
+          "weighted_c_ind_0_usd_per_gj": w_cind_0,
+          "weighted_c_ind_fut_usd_per_gj": w_cind_f,
           "weighted_lcoh_0_usd_per_gj": w_lcoh_0,
           "weighted_lcoh_fut_usd_per_gj": w_lcoh_f,
+          "initial_margin_0_usd_per_gj": w_cind_0 - w_lcoh_0,
+          "future_margin_fut_usd_per_gj": w_cind_f - w_lcoh_f,
           "delta_weighted_lcoh_usd_per_gj": w_lcoh_f - w_lcoh_0,
           "delta_weighted_lcoh_pct": 100.0 * (w_lcoh_f - w_lcoh_0) / max(1e-9, w_lcoh_0),
           "net_benefit_0_billion_usd_yr": float(df_res["net_benefit_0_usd_yr"].sum() / 1e9),
           "net_benefit_fut_billion_usd_yr": float(df_res["net_benefit_fut_usd_yr"].sum() / 1e9),
+          "portfolio_npv_40yr_7pct_billion_usd": float(npv_40yr_arr.sum() / 1e9) if win_id == "2046_2065" else np.nan,
           "co2_abated_0_mt_yr": float(df_res["co2_abated_0_t_yr"].sum() / 1e6),
           "co2_abated_fut_mt_yr": float(df_res["co2_abated_fut_t_yr"].sum() / 1e6),
           "foregone_co2_abatement_mt_yr": float(df_res["foregone_co2_abatement_t_yr"].sum() / 1e6),
@@ -1066,17 +1354,20 @@ def main() -> None:
   official_isos = set(reg_valid.loc[reg_valid["official_enduse"], "iso3"].unique())
 
   df_zones_25 = pd.read_parquet(DATA_PROCESSED / "sinks_2025/urban_heat_zones.parquet")
-  df_cands_25 = pd.read_parquet(DATA_PROCESSED / "sinks_2025/candidates_2025.parquet")
-  df_cands_20 = pd.read_parquet(DATA_PROCESSED / "sinks_2020_robustness/candidates_2025.parquet")
-
-  cand_counts_25 = df_cands_25["iso3"].value_counts().to_dict()
-  cand_counts_20 = df_cands_20["iso3"].value_counts().to_dict()
+  cand_counts_25 = pd.read_parquet(
+      DATA_PROCESSED / "sinks_2025/candidates_2025.parquet", columns=["iso3"]
+  )["iso3"].value_counts().to_dict()
+  cand_counts_20 = pd.read_parquet(
+      DATA_PROCESSED / "sinks_2020_robustness/candidates_2025.parquet", columns=["iso3"]
+  )["iso3"].value_counts().to_dict()
   all_study_isos = sorted(
       set(reg_valid["iso3"].unique()) | set(df_sources["iso3"].unique()),
       key=lambda c: -cand_counts_25.get(c, 0),
   )
   zone_isos_25 = sorted(cand_counts_25.keys(), key=lambda c: -cand_counts_25[c])
   zone_isos_20 = sorted(cand_counts_20.keys(), key=lambda c: -cand_counts_20[c])
+  del df_sources, df_rp
+  _trim_memory()
 
   # -------------------------------------------------------------------------
   # STAGE 1: Unique Climate-Demand Projections
@@ -1214,140 +1505,64 @@ def main() -> None:
     u_by_key_iso[uk] = dict(zip(df_u["iso3"], df_u["U_gj"]))
 
   # -------------------------------------------------------------------------
-  # STAGE 3: Full-System Techno-Economic Matching (P) Across All Scenarios
+  # STAGE 3: Full-System Techno-Economic Matching (P) Across All Scenarios (< 15 GB RAM)
   # -------------------------------------------------------------------------
-  # Deduplicate identical physical/economic runs (e.g. GWL crossing coinciding with R1 window)
   pending_scens = [sc for sc in scenarios if not (scen_dir / f"{sc.scenario_id}_countries.parquet").exists()]
-  print(f"Stage 3: {len(scenarios)} global scenarios ({len(pending_scens)} to solve across {N_SOLVER_WORKERS} workers)...", flush=True)
+  # Put R1__obs__2006_2025 first so central baseline verifies immediately, and place 2020 runs last
+  pending_scens.sort(key=lambda s: (0 if s.scenario_id == "R1__obs__2006_2025" else (2 if s.ghsl_epoch == 2020 else 1)))
+  print(
+      f"Stage 3: {len(scenarios)} global scenarios ({len(pending_scens)} to solve across {N_SOLVER_WORKERS} workers, "
+      f"initial RSS={_process_tree_rss_gb():.2f} GiB)...",
+      flush=True,
+  )
 
   if pending_scens:
-    p_tasks = []
-    for sc in pending_scens:
-      c_map = cand_counts_25 if sc.ghsl_epoch == 2025 else cand_counts_20
-      for iso in all_study_isos:
-        p_tasks.append((
-            -c_map.get(iso, 0),
-            {
-                "scen": sc,
-                "iso3": iso,
-                "clim_npz_path": str(clim_dir / f"{sc.clim_key}.npz"),
-            },
-        ))
-    p_tasks.sort(key=lambda x: x[0])
+    use_fork = sys.platform.startswith("linux")
+    if use_fork:
+      _init_solver_worker()
+      gc.collect()
+      gc.freeze()
+      print(f"   Parent fork-ready RSS={_process_tree_rss_gb():.2f} GiB (COW shared across {N_SOLVER_WORKERS} workers)", flush=True)
 
-    scen_map = {sc.scenario_id: sc for sc in pending_scens}
-    p_accum: dict[str, list[dict[str, object]]] = {sc.scenario_id: [] for sc in pending_scens}
+    scen_tasks = [
+        {
+            "scen": sc,
+            "all_study_isos": all_study_isos,
+            "official_isos": official_isos,
+            "u_iso_map": u_by_key_iso[sc.u_key],
+            "d_iso_map": clim_D_by_iso[sc.clim_key],
+            "clim_npz_path": str(clim_dir / f"{sc.clim_key}.npz"),
+            "out_dir": str(out_dir),
+            "scen_dir": str(scen_dir),
+            "u_dir": str(u_dir),
+            "z_out_dir": str(z_out_dir),
+        }
+        for sc in pending_scens
+    ]
+
     scen_done = 0
-
+    ctx = mp.get_context("fork") if use_fork else mp.get_context("spawn")
     with ProcessPoolExecutor(
         max_workers=N_SOLVER_WORKERS,
-        mp_context=mp.get_context("spawn"),
+        mp_context=ctx,
         initializer=_init_solver_worker,
     ) as ex:
-      futs = [ex.submit(_solve_p_country_task, t[1]) for t in p_tasks]
-      for idx, f in enumerate(as_completed(futs), start=1):
-        res = f.result()
-        sid = str(res["scenario_id"])
-        if idx % 500 == 0:
-          print(f"   [Stage 3 country-CELF heartbeat] {idx}/{len(p_tasks)} country solves done ({time.perf_counter()-t_start:.1f}s)", flush=True)
-        p_accum[sid].append(res)
-
-        if len(p_accum[sid]) == len(all_study_isos):
-          sc = scen_map[sid]
-          c_list = p_accum.pop(sid)
-          u_iso_map = u_by_key_iso[sc.u_key]
-          d_iso_map = clim_D_by_iso[sc.clim_key]
-
-          c_rows = []
-          all_sel_links = []
-          z_p_all: dict[str, float] = {}
-          z_d_all: dict[str, float] = {}
-
-          for cr in c_list:
-            iso = str(cr["iso3"])
-            q_gj = float(cr["Q_gj"])
-            u_gj = float(u_iso_map.get(iso, 0.0))
-            p_gj = float(cr["P_gj"])
-            # Enforce physical conservation 0 <= P <= U <= Q
-            assert u_gj <= q_gj * 1.001 + 10.0, (
-                f"Upper bound U exceeded Q in {sid} {iso}: U={u_gj}, Q={q_gj}"
-            )
-            if p_gj > u_gj + 1.0 and (p_gj - u_gj) / max(1.0, u_gj) > 0.02:
-              print(f"   [WARN] {sid} {iso}: P={p_gj:.1f} slightly > U={u_gj:.1f} (within-month quantile effect)", flush=True)
-            u_gj_clean = min(q_gj, max(p_gj, u_gj))
-            p_gj = min(p_gj, u_gj_clean)
-            c_rows.append({
-                "scenario_id": sid,
-                "group": sc.group,
-                "subgroup": sc.subgroup,
-                "model": sc.model,
-                "ssp": sc.ssp,
-                "window_id": sc.window_id,
-                "start_year": sc.start_year,
-                "end_year": sc.end_year,
-                "iso3": iso,
-                "official_enduse_country": iso in official_isos,
-                "Q_gj": q_gj,
-                "D_total_gj": float(d_iso_map.get(iso, 0.0)),
-                "D_urban_gj": float(cr["D_urban_gj"]),
-                "U_gj": u_gj_clean,
-                "P_gj": p_gj,
-                "H_deliv_gj": float(cr["H_deliv_gj"]),
-                "H_peaking_gj": float(cr["H_peaking_gj"]),
-                "net_benefit_usd": float(cr["net_benefit_usd"]),
-                "tot_dh_cost_usd": float(cr["tot_dh_cost_usd"]),
-                "avoided_ind_cost_usd": float(cr["avoided_ind_cost_usd"]),
-                "total_capex_usd": float(cr["total_capex_usd"]),
-                "co2_abated_t": float(cr["co2_abated_t"]),
-                "n_selected_links": int(cr["n_selected_links"]),
-                "P_power_gj": float(cr["P_by_sector"].get("power", 0.0)),
-                "P_steel_gj": float(cr["P_by_sector"].get("steel", 0.0)),
-                "P_cement_gj": float(cr["P_by_sector"].get("cement", 0.0)),
-                "P_refining_gj": float(cr["P_by_sector"].get("refining", 0.0)),
-                "P_ethylene_gj": float(cr["P_by_sector"].get("ethylene", 0.0)),
-                "P_pulp_paper_gj": float(cr["P_by_sector"].get("pulp_paper", 0.0)),
-                "P_wastewater_gj": float(cr["P_by_sector"].get("wastewater", 0.0)),
-                "P_direct_hex_gj": float(cr["P_by_upgrade"].get("direct_hex", 0.0)),
-                "P_hp_ind_power_gj": float(cr["P_by_upgrade"].get("hp_ind_power", 0.0)),
-                "P_hp_wastewater_gj": float(cr["P_by_upgrade"].get("hp_wastewater", 0.0)),
-            })
-            if sc.save_selected_links and cr["selected_links"]:
-              all_sel_links.extend(cr["selected_links"])
-            if sc.save_zone_table:
-              z_p_all.update(cr["zone_P_gj"])
-              z_d_all.update(cr["zone_D_gj"])
-
-          df_c_out = pd.DataFrame(c_rows)
-          df_c_out.to_parquet(scen_dir / f"{sid}_countries.parquet", index=False)
-
-          if sc.save_selected_links and all_sel_links:
-            pd.DataFrame(all_sel_links).to_parquet(out_dir / f"{sid}_selected_links.parquet", index=False)
-
-          if sc.save_zone_table:
-            uz_path = u_dir / f"{sc.u_key}_zones.parquet"
-            uz_map = {}
-            if uz_path.exists():
-              df_uz = pd.read_parquet(uz_path)
-              uz_map = dict(zip(df_uz["zone_id"], df_uz["U_gj"]))
-            z_rows = [
-                {
-                    "zone_id": zk,
-                    "D_gj": zd_v,
-                    "U_gj": max(z_p_all.get(zk, 0.0), float(uz_map.get(zk, 0.0))),
-                    "P_gj": float(z_p_all.get(zk, 0.0)),
-                }
-                for zk, zd_v in z_d_all.items()
-            ]
-            pd.DataFrame(z_rows).to_parquet(z_out_dir / f"{sid}_zones.parquet", index=False)
-
-          scen_done += 1
-          if scen_done % 10 == 0 or scen_done == len(pending_scens):
-            print(
-                f"   Stage 3 progress: {scen_done}/{len(pending_scens)} scenarios completed "
-                f"(latest {sid}: P={df_c_out['P_gj'].sum()/1e9:.3f} EJ/yr, U={df_c_out['U_gj'].sum()/1e9:.3f} EJ/yr, "
-                f"D={df_c_out['D_total_gj'].sum()/1e9:.3f} EJ/yr, {time.perf_counter()-t_start:.1f}s)",
-                flush=True,
-            )
+      futs = [ex.submit(_solve_full_scenario_task, t) for t in scen_tasks]
+      for f in as_completed(futs):
+        sid, p_ej, u_ej, d_ej = f.result()
+        scen_done += 1
+        if scen_done == 1 or scen_done % 5 == 0 or scen_done == len(pending_scens):
+          rss_gb = _process_tree_rss_gb()
+          print(
+              f"   Stage 3 progress: {scen_done}/{len(pending_scens)} scenarios completed "
+              f"(latest {sid}: P={p_ej:.3f} EJ/yr, U={u_ej:.3f} EJ/yr, D={d_ej:.3f} EJ/yr, "
+              f"RSS={rss_gb:.2f} GiB, {time.perf_counter()-t_start:.1f}s)",
+              flush=True,
+          )
+    if use_fork:
+      gc.unfreeze()
+    _SOLV_INIT.clear()
+    _trim_memory()
 
   # -------------------------------------------------------------------------
   # STAGE 4: Aggregate All Scenarios, Run R3 Locked Assets, R2 Decomposition, & Robustness 5
@@ -1395,6 +1610,26 @@ def main() -> None:
   df_global = pd.DataFrame(global_rows)
   df_global.to_parquet(out_dir / "global_scenarios_summary.parquet", index=False)
   df_global.to_csv(out_dir / "global_scenarios_summary.csv", index=False)
+
+  # Aggregate 5-GCM ensemble-mean selected links for mid-century S5_combined_all
+  s5_dfs = []
+  for mod in ISIMIP3B_MODELS:
+    s5_pq = out_dir / f"R4__S5_combined_all__{mod}__ssp245__2046_2065_selected_links.parquet"
+    if s5_pq.exists():
+      d_m = pd.read_parquet(s5_pq)
+      d_m["model"] = mod
+      s5_dfs.append(d_m)
+  if len(s5_dfs) == len(ISIMIP3B_MODELS):
+    s5_cat = pd.concat(s5_dfs, ignore_index=True)
+    num_cols = [
+        c for c in ("P_net_waste_heat_gj_yr", "H_deliv_gj_yr", "H_peaking_gj_yr", "net_benefit_usd_yr", "total_capex_usd", "co2_abated_t_yr")
+        if c in s5_cat.columns
+    ]
+    s5_ens = s5_cat.groupby(["iso3", "zone_id", "stream_id", "sector", "upgrade_mode"], as_index=False).agg(
+        n_models_selected=("model", "nunique"),
+        **{c: (c, lambda s, n=float(len(ISIMIP3B_MODELS)): float(s.sum()) / n) for c in num_cols},
+    )
+    s5_ens.to_parquet(out_dir / "R4__S5_combined_all_2046_2065_selected_links_ensmean.parquet", index=False)
 
   # Run R3 Locked Assets (10 runs)
   df_locked_base = pd.read_parquet(out_dir / "R1__obs__2006_2025_selected_links.parquet")

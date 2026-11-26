@@ -707,6 +707,9 @@ def compile_2025_prices_plis_and_ef(all_isos: list[str]) -> dict[str, dict[str, 
   # Residential gas $15.34/Mcf, Commercial $10.98/Mcf -> 60/40 blend = $13.60/Mcf = 13.76 USD/GJ_LHV retail, 12.86 pre-tax
   US_EL_RETAIL, US_EL_PRETAX = 157.44, 147.14
   US_NG_RETAIL, US_NG_PRETAX = 13.76, 12.86
+  # UK DESNZ 2025 Quarterly Energy Prices (Tables 2.2.1, 2.3.1, 3.4.1; 60/40 domestic/non-domestic building blend):
+  UK_EL_PRETAX, UK_EL_RETAIL = 285.00, 305.00
+  UK_NG_PRETAX, UK_NG_RETAIL = 19.80, 21.38
 
   info: dict[str, dict[str, object]] = {}
   for iso in all_isos:
@@ -714,50 +717,54 @@ def compile_2025_prices_plis_and_ef(all_isos: list[str]) -> dict[str, dict[str, 
     p_el_pre, p_el_ret, p_src = np.nan, np.nan, "missing"
     if iso == "USA":
       p_el_pre, p_el_ret, p_src = US_EL_PRETAX, US_EL_RETAIL, "US_EIA_MER_2025"
+    elif iso == "GBR":
+      p_el_pre, p_el_ret, p_src = UK_EL_PRETAX, UK_EL_RETAIL, "UK_DESNZ_QEP_2025"
     elif (iso, "X_TAX") in eu_el_hh or (iso, "I_TAX") in eu_el_hh:
       hh_x = eu_el_hh.get((iso, "X_TAX"), eu_el_nh.get((iso, "X_TAX"), np.nan))
       hh_i = eu_el_hh.get((iso, "I_TAX"), hh_x * 1.25 if pd.notna(hh_x) else np.nan)
       if pd.isna(hh_x) and pd.notna(hh_i):
         hh_x = hh_i / 1.25
-      p_el_pre, p_el_ret, p_src = float(hh_x), float(hh_i), "Eurostat_nrg_pc_204_2025"
+      p_el_pre = float(hh_x)
+      p_el_ret = max(float(hh_i), p_el_pre * 1.05) if pd.notna(hh_x) else float(hh_i)
+      p_src = "Eurostat_nrg_pc_204_2025"
     elif iso in wb_el_usd_mwh:
-      ret = wb_el_usd_mwh[iso]
-      sub_mwh = imf_el_sub_usd.get(iso, 0.0) / max(1e5, gen_mwh_map.get(iso, 1e9))
-      sub_mwh = min(sub_mwh, 120.0)  # cap noisy micro-grid division
-      if sub_mwh > 2.0:
-        # Subsidized tariff: retail is below supply cost; supply cost = retail + explicit subsidy
-        p_el_ret = ret
-        p_el_pre = ret + sub_mwh
-      else:
-        p_el_ret = ret
-        p_el_pre = ret / 1.12  # strip standard ~12% VAT/sales tax
-      p_src = "WorldBank_DB1619_IMF_SubsidyAdj_2025"
+      ret = float(wb_el_usd_mwh[iso])
+      p_el_ret = ret
+      p_el_pre = ret / 1.12  # strip standard ~12% VAT/sales tax (do not add IMF implicit externality totals)
+      p_src = "WorldBank_DB1619_CPI_FX_2025"
 
     # B. Natural gas prices [2025 USD/GJ LHV]
     if iso == "USA":
       p_ng_pre, p_ng_ret = US_NG_PRETAX, US_NG_RETAIL
+    elif iso == "GBR":
+      p_ng_pre, p_ng_ret = UK_NG_PRETAX, UK_NG_RETAIL
     elif (iso, "X_TAX") in eu_ng_hh or (iso, "I_TAX") in eu_ng_hh:
       gx = eu_ng_hh.get((iso, "X_TAX"), eu_ng_nh.get((iso, "X_TAX"), ttf_2025_gj + eu_dist_margin_gj))
       gi = eu_ng_hh.get((iso, "I_TAX"), gx * 1.22)
       if pd.isna(gx) and pd.notna(gi):
         gx = gi / 1.22
-      p_ng_pre, p_ng_ret = float(gx), float(gi)
+      p_ng_pre = float(gx)
+      p_ng_ret = max(float(gi), p_ng_pre * 1.05) if pd.notna(gx) else float(gi)
     else:
-      # Regional hub + local distribution margin (scaled by PLI; cap non-OECD peg distortions at 0.85)
+      # Regional wholesale supply mix + local city-gate distribution margin (scaled by PLI)
       pli_raw = get_latest_pli(iso)
       max_pli = 1.50 if iso in OECD_ISO3 or iso in ("SGP", "HKG", "MAC", "ARE", "QAT", "ISR") else 0.85
       pli_rel = float(np.clip((pli_raw / deu_pli) if pli_raw is not None else 0.65, 0.35, max_pli))
       local_dist = eu_dist_margin_gj * pli_rel
       if iso in ("CAN", "MEX"):
         hub = hh_2025_gj
-      elif iso in ("JPN", "KOR", "TWN", "CHN", "HKG", "SGP", "IND", "PAK", "BGD", "THA", "VNM"):
+      elif iso == "CHN":
+        # China 2025 supply blend: ~55% domestic/overland pipeline gas + ~45% coastal liquefied natural gas/import parity (NBS / IEA Gas 2025)
+        hub = 0.55 * hh_2025_gj + 0.45 * jkm_2025_gj
+      elif iso in ("JPN", "KOR", "TWN", "HKG", "SGP", "IND", "PAK", "BGD", "THA", "VNM"):
         hub = jkm_2025_gj * (0.60 if iso in GAS_EXPORTERS else 1.0)
       elif iso in GAS_EXPORTERS:
         hub = hh_2025_gj * 0.85
       else:
         hub = ttf_2025_gj * 0.85
       p_ng_pre = float(hub + local_dist)
-      p_ng_ret = float(p_ng_pre * 1.10 if imf_ng_sub_usd.get(iso, 0.0) < 1e8 else max(2.0, p_ng_pre * 0.65))
+      vat_mult = 1.09 if iso == "CHN" else 1.10
+      p_ng_ret = float(p_ng_pre * vat_mult)
 
     # C. Capital scaling factors (World Bank PPP / FX relative to DEU)
     pli_c = get_latest_pli(iso)
@@ -766,7 +773,7 @@ def compile_2025_prices_plis_and_ef(all_isos: list[str]) -> dict[str, dict[str, 
     cap_civ = pli_ratio if pd.notna(pli_ratio) else np.nan
     cap_eq = (0.50 + 0.50 * cap_civ) if pd.notna(cap_civ) else np.nan
 
-    # D. Grid EF 2025 & 2050 (IEA WEO APS/NZE trajectory) & R4 2050 envelope retrofit multiplier
+    # D. Grid EF 2025 & 2050 (stylized deep-decarbonization regional reduction caps) & R4 2050 envelope retrofit multiplier
     ef25 = ef_2025_map.get(iso, np.nan)
     if pd.notna(ef25):
       if iso in OECD_ISO3:
@@ -1046,5 +1053,122 @@ def main() -> None:
   )
 
 
+def enrich_urban_zones_with_hdd14_and_cdd18() -> dict[str, object]:
+  """Compute 2006-2025 observed cell CDD18 and attach hdd14_0, cdd18_0, and f_space_heat_dd to urban heat zones."""
+  sinks_25 = DATA_PROCESSED / "sinks_2025"
+  hdd0_path = sinks_25 / "baseline_cell_hdd14_2006_2025.npy"
+  cdd0_path = sinks_25 / "baseline_cell_cdd18_2006_2025.npy"
+
+  if not hdd0_path.exists():
+    hdd_cache = compute_annual_hdd_cache()
+    np.save(hdd0_path, hdd_cache[(0, 14.0)])
+  cell_hdd14_0 = np.load(hdd0_path).astype(np.float64)
+
+  tas_dir = DATA_PROCESSED / "tas/gswp3-era5__obsclim"
+  cdd_sum = np.zeros(52160, dtype=np.float64)
+  n_days = 0
+  for yr in range(2006, 2026):
+    with nc.Dataset(tas_dir / f"year_{yr}.nc", "r") as dst:
+      t_yr = np.asarray(dst["tas_c"][:, :], dtype=np.float32)
+    cdd_sum += np.maximum(t_yr - np.float32(18.0), np.float32(0.0)).sum(axis=0, dtype=np.float64)
+    n_days += t_yr.shape[0]
+  cell_cdd18_0 = cdd_sum / (n_days / 365.25)
+  np.save(cdd0_path, cell_cdd18_0)
+
+  summary: dict[str, object] = {}
+  for sub_name in ("sinks_2025", "sinks_2020_robustness"):
+    sdir = DATA_PROCESSED / sub_name
+    z_path = sdir / "urban_heat_zones.parquet"
+    w_path = sdir / "urban_zone_cell_weights.parquet"
+    if not z_path.exists() or not w_path.exists():
+      continue
+    df_z = pd.read_parquet(z_path)
+    df_w = pd.read_parquet(w_path)
+    df_w = df_w.copy()
+    c_idx = df_w["cell_idx"].to_numpy(dtype=np.int32)
+    v_w = df_w["volume_m3"].to_numpy(dtype=np.float64)
+    df_w["vhdd14"] = v_w * cell_hdd14_0[c_idx]
+    df_w["vcdd18"] = v_w * cell_cdd18_0[c_idx]
+    agg = df_w.groupby("zone_id", as_index=False)[["volume_m3", "vhdd14", "vcdd18"]].sum()
+    agg["hdd14_0"] = agg["vhdd14"] / np.maximum(1.0, agg["volume_m3"])
+    agg["cdd18_0"] = agg["vcdd18"] / np.maximum(1.0, agg["volume_m3"])
+    denom = agg["hdd14_0"] + agg["cdd18_0"]
+    agg["f_space_heat_dd"] = np.where(denom > 1e-6, agg["hdd14_0"] / denom, 1.0)
+
+    drop_cols = [c for c in ("hdd14_0", "cdd18_0", "f_space_heat_dd") if c in df_z.columns]
+    if drop_cols:
+      df_z = df_z.drop(columns=drop_cols)
+    df_z = df_z.merge(agg[["zone_id", "hdd14_0", "cdd18_0", "f_space_heat_dd"]], on="zone_id", how="left")
+    df_z["hdd14_0"] = df_z["hdd14_0"].fillna(0.0)
+    df_z["cdd18_0"] = df_z["cdd18_0"].fillna(0.0)
+    df_z["f_space_heat_dd"] = df_z["f_space_heat_dd"].fillna(1.0)
+    df_z.to_parquet(z_path, index=False)
+    if sub_name == "sinks_2025":
+      isr_sub = df_z[df_z["iso3"] == "ISR"]
+      chn_sub = df_z[df_z["iso3"] == "CHN"]
+      deu_sub = df_z[df_z["iso3"] == "DEU"]
+      summary["zone_f_space_heat_dd_means"] = {
+          "ISR": float(isr_sub["f_space_heat_dd"].mean()) if len(isr_sub) else None,
+          "CHN": float(chn_sub["f_space_heat_dd"].mean()) if len(chn_sub) else None,
+          "DEU": float(deu_sub["f_space_heat_dd"].mean()) if len(deu_sub) else None,
+      }
+  return summary
+
+
+def fast_update_prices_and_zones() -> None:
+  """Refresh 2025 energy tariffs (enforcing pretax <= retail everywhere) and zone HDD14/CDD18 shares in <15s."""
+  sinks_dir = DATA_PROCESSED / "sinks_2025"
+  p_parquet = sinks_dir / "calibrated_region_parameters_2025.parquet"
+  df_out = pd.read_parquet(p_parquet)
+  all_isos = sorted(df_out["iso3"].astype(str).unique())
+  price_info = compile_2025_prices_plis_and_ef(all_isos)
+
+  price_cols = [
+      "p_elec_pretax_usd_per_mwh",
+      "p_elec_retail_usd_per_mwh",
+      "p_gas_pretax_usd_per_gj",
+      "p_gas_retail_usd_per_gj",
+      "price_source",
+      "cap_scale_civil",
+      "cap_scale_equip",
+      "grid_ef_2025_tco2_per_mwh",
+      "grid_ef_2050_tco2_per_mwh",
+      "kc_retrofit_2050_mult",
+  ]
+  for col in price_cols:
+    df_out[col] = df_out["iso3"].map(lambda iso: price_info.get(str(iso), {}).get(col, np.nan))
+
+  has_energy = (df_out["cal_sh_useful_gj"] + df_out["cal_wh_useful_gj"] > 0) & (df_out["v25_m3"] > 0)
+  has_prices = (
+      df_out["p_elec_pretax_usd_per_mwh"].notna()
+      & df_out["cap_scale_civil"].notna()
+      & df_out["grid_ef_2025_tco2_per_mwh"].notna()
+  )
+  df_out["valid_for_study"] = has_energy & has_prices
+
+  df_v = df_out[df_out["valid_for_study"]]
+  el_inv = int((df_v["p_elec_pretax_usd_per_mwh"] > df_v["p_elec_retail_usd_per_mwh"] + 1e-9).sum())
+  ng_inv = int((df_v["p_gas_pretax_usd_per_gj"] > df_v["p_gas_retail_usd_per_gj"] + 1e-9).sum())
+  assert el_inv == 0 and ng_inv == 0, f"Price inversion detected: el_inv={el_inv}, ng_inv={ng_inv}"
+
+  df_out.to_parquet(p_parquet, index=False)
+  df_out.to_csv(sinks_dir / "calibrated_region_parameters_2025.csv", index=False)
+  z_sum = enrich_urban_zones_with_hdd14_and_cdd18()
+  print("=== FAST UPDATE COMPLETE: ZERO PRICE INVERSIONS & ZONE CDD18 ENRICHED ===", flush=True)
+  print("Valid regions:", int(df_v.shape[0]), "el_inv:", el_inv, "ng_inv:", ng_inv, flush=True)
+  print(
+      df_v[df_v["iso3"].isin(["CHN", "RUS", "DEU", "USA", "GBR", "ISR"])][
+          ["region_id", "iso3", "p_elec_pretax_usd_per_mwh", "p_elec_retail_usd_per_mwh", "p_gas_pretax_usd_per_gj", "p_gas_retail_usd_per_gj"]
+      ].drop_duplicates("iso3").to_string(index=False),
+      flush=True,
+  )
+  print("Zone f_space_heat_dd summary:", json.dumps(z_sum, indent=2), flush=True)
+
+
 if __name__ == "__main__":
-  main()
+  import sys
+  if "--fast-update" in sys.argv:
+    fast_update_prices_and_zones()
+  else:
+    main()
+    enrich_urban_zones_with_hdd14_and_cdd18()

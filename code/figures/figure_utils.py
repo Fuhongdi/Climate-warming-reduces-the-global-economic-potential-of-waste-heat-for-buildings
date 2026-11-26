@@ -22,6 +22,15 @@ def load_world_basemap(root_dir: Path):
     if cache_pq.exists():
         return gpd.read_parquet(cache_pq)
 
+    for zp in (
+        Path(root_dir) / "data/raw/supplements_2025/gadm41/gadm_410-levels.zip",
+        Path(root_dir) / "data/raw/gadm_410-levels.zip",
+    ):
+        if zp.exists() and not zp.with_suffix(".gpkg").exists():
+            import zipfile
+            with zipfile.ZipFile(zp, "r") as zf:
+                zf.extractall(zp.parent)
+
     for gp in (
         Path(root_dir) / "data/raw/supplements_2025/gadm41/gadm_410-levels.gpkg",
         Path(root_dir) / "data/raw/gadm_410-levels.gpkg",
@@ -91,6 +100,9 @@ def _srgb_to_lstar(hex_color: str) -> float:
 
 def check_palette_contrast(colors, labels=None, min_gap: float = 8.0, ordered: bool = False, name: str = ""):
     """Compute perceptual lightness (CIE L*) across palette entries."""
+    if isinstance(colors, dict):
+        labels = list(colors.keys()) if labels is None else labels
+        colors = list(colors.values())
     vals = [_srgb_to_lstar(c) for c in colors]
     names = list(labels) if labels is not None else [str(c) for c in colors]
     close_pairs = []

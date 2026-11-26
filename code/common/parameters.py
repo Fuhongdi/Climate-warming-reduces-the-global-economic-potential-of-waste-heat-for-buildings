@@ -213,19 +213,12 @@ DH_SUBSTATION_2050 = BuildingHeatingSpec(
     lifetime_yr=25.0,
 )
 
-# DEA Sheet 202: Condensing gas boiler, existing apartment (320 kW_h)
+# DEA Sheet 202: Condensing gas boiler, existing apartment (320 kW_h; held fixed across scenarios)
 INDIV_GAS_BOILER_2025 = BuildingHeatingSpec(
     efficiency_or_scop_ref=1.01,
     capex_eur_per_mw_h=103_290.625,
     fixed_om_eur_per_mw_h_yr=2_211.40625,
     aux_elec_mwh_per_mw_h_yr=2.03125,
-    lifetime_yr=25.0,
-)
-INDIV_GAS_BOILER_2050 = BuildingHeatingSpec(
-    efficiency_or_scop_ref=1.02,
-    capex_eur_per_mw_h=91_968.75,
-    fixed_om_eur_per_mw_h_yr=1_950.96875,
-    aux_elec_mwh_per_mw_h_yr=1.5625,
     lifetime_yr=25.0,
 )
 

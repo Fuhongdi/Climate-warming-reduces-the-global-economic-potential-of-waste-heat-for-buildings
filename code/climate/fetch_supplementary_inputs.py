@@ -10,17 +10,18 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import zipfile
 
 ROOT = Path(os.environ.get("WASTE_HEAT_ROOT", Path(__file__).resolve().parents[2]))
 OUT_RAW = ROOT / "data/raw/supplements_2025"
 OUT_RAW.mkdir(parents=True, exist_ok=True)
 
 
-def check_disk() -> float:
+def check_disk(min_gib: float = 20.0) -> float:
   free_gib = shutil.disk_usage(ROOT).free / (1024**3)
   print(f"[Disk free space]: {free_gib:.1f} GiB", flush=True)
-  if free_gib < 500.0:
-    raise RuntimeError(f"Insufficient disk free space: {free_gib:.1f} GiB")
+  if free_gib < min_gib:
+    raise RuntimeError(f"Insufficient disk free space: {free_gib:.1f} GiB (< {min_gib:.1f} GiB)")
   return free_gib
 
 
@@ -52,15 +53,14 @@ def curl_download(
     }
 
   tmp = dest.with_name(dest.name + ".part")
-  # Retry up to 12 times on proxy with resume (-C -) before ever trying direct
-  for attempt in range(1, 13):
-    cmd = [
-        "curl",
-        "--disable",
-        "--proxy",
-        "http://127.0.0.1:7897",
-        "--noproxy",
-        "",
+  proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("https_proxy") or os.environ.get("http_proxy")
+  modes = (["proxy", "direct"] if proxy_url else ["direct"])
+  for attempt in range(1, 7):
+    mode = modes[(attempt - 1) % len(modes)]
+    cmd = ["curl", "--disable"]
+    if mode == "proxy" and proxy_url:
+      cmd += ["--proxy", proxy_url]
+    cmd += [
         "-L",
         "--fail",
         "--silent",
@@ -88,18 +88,18 @@ def curl_download(
       tmp.replace(dest)
       sz = dest.stat().st_size
       digest = sha256_file(dest)
-      print(f"  [OK via proxy attempt {attempt}] {dest.name}: {sz / 1e6:.2f} MB", flush=True)
+      print(f"  [OK via {mode} attempt {attempt}] {dest.name}: {sz / 1e6:.2f} MB", flush=True)
       return {
           "url": url,
           "path": str(dest.relative_to(ROOT)),
           "bytes": sz,
           "sha256": digest,
-          "mode": "proxy",
+          "mode": mode,
           "utc": datetime.now(timezone.utc).isoformat(),
       }
     cur_sz = tmp.stat().st_size / 1e6 if tmp.exists() else 0.0
     print(
-        f"  [Proxy attempt {attempt}/12 for {dest.name} (part={cur_sz:.1f} MB)]: rc={res.returncode} {res.stderr.strip()[:160]}",
+        f"  [{mode} attempt {attempt}/6 for {dest.name} (part={cur_sz:.1f} MB)]: rc={res.returncode} {res.stderr.strip()[:160]}",
         flush=True,
     )
     # Stop immediately on hard 404/403
@@ -225,14 +225,19 @@ def main() -> None:
   )
 
   # 7. GADM 4.1 Global Administrative Boundaries (ADM_0 / ADM_1 / ADM_2)
-  print("7. Fetching GADM 4.1 global levels GeoPackage zip (~2.5 GB via proxy resume)...", flush=True)
+  print("7. Fetching GADM 4.1 global levels GeoPackage zip (~2.5 GB)...", flush=True)
+  gadm_zip = OUT_RAW / "gadm41/gadm_410-levels.zip"
+  gadm_gpkg = OUT_RAW / "gadm41/gadm_410-levels.gpkg"
   safe_fetch(
       "gadm41",
       "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-levels.zip",
-      OUT_RAW / "gadm41/gadm_410-levels.zip",
+      gadm_zip,
       timeout_s=1800,
       min_bytes=1_000_000_000,
   )
+  if gadm_zip.exists() and not gadm_gpkg.exists():
+    with zipfile.ZipFile(gadm_zip, "r") as zf:
+      zf.extractall(gadm_zip.parent)
 
   # 8. GHSL E2020 100 m Built-up Volume Rasters (for Robustness Check 4)
   print("8. Fetching GHSL E2020 100 m total & non-residential volume rasters (Robustness 4)...", flush=True)
